@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Testimony - {{ appearance.witness_name }} - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="detail-header">
+    <h1>Testimony: {{ appearance.witness_name }}</h1>
+    <div class="detail-meta">
+        <div class="meta-item">
+            <span class="meta-label">Hearing:</span>
+            <a href="/hearing/{{ appearance.hearing_id }}">{{ appearance.hearing_title|truncate(70) }}</a>
+        </div>
+        {% if appearance.hearing_date %}
+        <div class="meta-item">
+            <span class="meta-label">Date:</span> {{ appearance.hearing_date }}
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="badge {% if appearance.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ appearance.chamber }}</span>
+        </div>
+    </div>
+    {% if appearance.position or appearance.organization %}
+    <div style="margin-top:0.5rem; color:var(--text-light)">
+        Testified as: {% if appearance.position %}{{ appearance.position }}{% endif %}{% if appearance.organization %}, {{ appearance.organization }}{% endif %}
+    </div>
+    {% endif %}
+    <div class="external-links">
+        <a href="/witness/{{ appearance.witness_id }}">View Witness Profile</a>
+        {% if appearance.statement_url %}
+        <a href="{{ appearance.statement_url }}" target="_blank">Written Statement (PDF)</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if testimony %}
+<h2 class="section-title">Written Testimony</h2>
+{% for t in testimony %}
+<div style="margin-bottom:0.5rem">
+    <span class="badge badge-testimony">{{ t.testimony_type|replace('_', ' ')|title }}</span>
+    <span style="font-size:0.85rem; color:var(--text-muted)"> &middot; Source: {{ t.source }}</span>
+</div>
+{% if t.summary %}
+<div class="card" style="margin-bottom:1rem">
+    <strong>Summary:</strong>
+    <p>{{ t.summary }}</p>
+</div>
+{% endif %}
+<div class="testimony-content">{{ t.content }}</div>
+{% endfor %}
+{% else %}
+<div class="card">
+    <p style="color:var(--text-muted)">No written testimony text available in the database.
+    {% if appearance.statement_url %}
+    <a href="{{ appearance.statement_url }}" target="_blank">View the written statement PDF on Congress.gov &rarr;</a>
+    {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% if qfrs %}
+<h2 class="section-title" id="qfr">Questions for the Record ({{ qfrs|length }})</h2>
+{% for q in qfrs %}
+<div class="qfr-block">
+    {% if q.questioner_name %}
+    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.5rem">
+        From: {{ q.questioner_title or '' }} {{ q.questioner_name }}
+    </div>
+    {% endif %}
+    {% if q.question_text %}
+    <div class="qfr-question">Q: {{ q.question_text }}</div>
+    {% endif %}
+    {% if q.answer_text %}
+    <div class="qfr-answer">A: {{ q.answer_text }}</div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

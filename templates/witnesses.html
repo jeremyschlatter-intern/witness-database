@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Witnesses - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Witnesses</h1>
+    <p class="subtitle">Browse all witnesses who have testified before Congress</p>
+</div>
+
+<form class="filter-bar" method="GET" action="/witnesses">
+    <input type="text" name="q" class="search-input" placeholder="Search witnesses by name..." value="{{ q }}">
+    <select name="chamber">
+        <option value="">All Chambers</option>
+        <option value="House" {% if chamber == 'House' %}selected{% endif %}>House</option>
+        <option value="Senate" {% if chamber == 'Senate' %}selected{% endif %}>Senate</option>
+    </select>
+    <select name="congress">
+        <option value="">All Congresses</option>
+        {% for c in congresses %}
+        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress }}th Congress</option>
+        {% endfor %}
+    </select>
+    <select name="sort">
+        <option value="appearances" {% if sort == 'appearances' %}selected{% endif %}>Most Appearances</option>
+        <option value="name" {% if sort == 'name' %}selected{% endif %}>Name (A-Z)</option>
+        <option value="recent" {% if sort == 'recent' %}selected{% endif %}>Most Recent</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if q or chamber or congress != '' %}
+    <a href="/witnesses" class="btn btn-outline">Clear</a>
+    {% endif %}
+</form>
+
+<div class="results-info">
+    Showing {{ witnesses|length }} of {{ "{:,}".format(total) }} witnesses
+    {% if q %} matching "{{ q }}"{% endif %}
+</div>
+
+{% if witnesses %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Titles / Positions</th>
+            <th class="count-col">Appearances</th>
+            <th class="date-col">First</th>
+            <th class="date-col">Last</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for w in witnesses %}
+        <tr>
+            <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name }}</a></td>
+            <td>
+                {% if w.titles %}
+                    <span style="font-size:0.85rem; color:var(--text-light)">{{ w.titles|truncate(80) }}</span>
+                {% endif %}
+            </td>
+            <td class="count-col"><span class="badge badge-count">{{ w.appearance_count }}</span></td>
+            <td class="date-col">{{ w.first_appearance_date or '—' }}</td>
+            <td class="date-col">{{ w.last_appearance_date or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <h2>No witnesses found</h2>
+    <p>Try adjusting your search or filters.</p>
+</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&sort={{ sort }}">&laquo; Previous</a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+        <a href="?page={{ p }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&sort={{ sort }}">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+        <span class="disabled">...</span>
+        {% endif %}
+    {% endfor %}
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&sort={{ sort }}">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

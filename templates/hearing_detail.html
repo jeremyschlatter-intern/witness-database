@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ hearing.title|truncate(60) }} - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="detail-header">
+    <h1>{{ hearing.title }}</h1>
+    <div class="detail-meta">
+        <div class="meta-item">
+            <span class="badge {% if hearing.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ hearing.chamber }}</span>
+        </div>
+        {% if hearing.date %}
+        <div class="meta-item">
+            <span class="meta-label">Date:</span> {{ hearing.date }}
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="meta-label">Congress:</span> {{ hearing.congress }}th
+        </div>
+        {% if hearing.committee_names %}
+        <div class="meta-item">
+            <span class="meta-label">Committee:</span> {{ hearing.committee_names }}
+        </div>
+        {% endif %}
+        {% if hearing.hearing_type and hearing.hearing_type != 'Hearing' %}
+        <div class="meta-item">
+            <span class="meta-label">Type:</span> {{ hearing.hearing_type }}
+        </div>
+        {% endif %}
+        {% if hearing.location_building %}
+        <div class="meta-item">
+            <span class="meta-label">Location:</span> {{ hearing.location_building }}{% if hearing.location_room %}, Room {{ hearing.location_room }}{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    <div class="external-links">
+        {% if hearing.transcript_url %}
+        <a href="{{ hearing.transcript_url }}" target="_blank">View Full Transcript</a>
+        {% endif %}
+        {% if hearing.transcript_pdf_url %}
+        <a href="{{ hearing.transcript_pdf_url }}" target="_blank">Transcript PDF</a>
+        {% endif %}
+        {% if hearing.congress_gov_url %}
+        <a href="{{ hearing.congress_gov_url }}" target="_blank">Congress.gov</a>
+        {% endif %}
+        {% if hearing.govinfo_package_id %}
+        <a href="https://www.govinfo.gov/content/pkg/{{ hearing.govinfo_package_id }}/html/{{ hearing.govinfo_package_id }}.htm" target="_blank">GovInfo</a>
+        {% endif %}
+    </div>
+</div>
+
+<h2 class="section-title">Witnesses ({{ witnesses|length }})</h2>
+
+{% if witnesses %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Witness</th>
+            <th>Position</th>
+            <th>Organization</th>
+            <th>Documents</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for w in witnesses %}
+        <tr>
+            <td class="name-col"><a href="/witness/{{ w.witness_id }}">{{ w.witness_name }}</a></td>
+            <td>{{ w.position or '—' }}</td>
+            <td>{{ w.organization or '—' }}</td>
+            <td>
+                <div class="external-links" style="margin-top:0">
+                    {% if w.testimony_count > 0 %}
+                    <a href="/hearing/{{ hearing.id }}/testimony/{{ w.id }}"><span class="badge badge-testimony">Testimony</span></a>
+                    {% endif %}
+                    {% if w.qfr_count > 0 %}
+                    <a href="/hearing/{{ hearing.id }}/testimony/{{ w.id }}#qfr"><span class="badge badge-qfr">QFR ({{ w.qfr_count }})</span></a>
+                    {% endif %}
+                    {% if w.statement_url %}
+                    <a href="{{ w.statement_url }}" target="_blank">Statement PDF</a>
+                    {% endif %}
+                    {% if w.biography_url %}
+                    <a href="{{ w.biography_url }}" target="_blank">Bio PDF</a>
+                    {% endif %}
+                    {% if w.truth_in_testimony_url %}
+                    <a href="{{ w.truth_in_testimony_url }}" target="_blank">Truth in Testimony</a>
+                    {% endif %}
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No witness information available for this hearing.</p>
+</div>
+{% endif %}
+{% endblock %}

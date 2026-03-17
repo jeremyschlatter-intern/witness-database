@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="detail-header">
+    <h1>{{ title }}</h1>
+    {% if org %}
+    <div class="detail-meta">
+        <div class="meta-item">
+            <span class="meta-label">Organization:</span> {{ org }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<h2 class="section-title">People Who Have Held This Title ({{ holders|length }})</h2>
+
+{% if holders %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Organization</th>
+            <th class="count-col">Appearances</th>
+            <th class="date-col">First Seen</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in holders %}
+        <tr>
+            <td class="name-col"><a href="/witness/{{ h.id }}">{{ h.name }}</a></td>
+            <td>{{ h.organization or '—' }}</td>
+            <td class="count-col"><span class="badge badge-count">{{ h.appearance_count }}</span></td>
+            <td class="date-col">{{ h.start_date or h.first_appearance_date or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No records found for this title.</p>
+</div>
+{% endif %}
+{% endblock %}

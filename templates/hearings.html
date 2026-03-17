@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Hearings - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Hearings</h1>
+    <p class="subtitle">Browse House and Senate committee hearings</p>
+</div>
+
+<form class="filter-bar" method="GET" action="/hearings">
+    <input type="text" name="q" class="search-input" placeholder="Search hearings by topic..." value="{{ q }}">
+    <select name="chamber">
+        <option value="">All Chambers</option>
+        <option value="House" {% if chamber == 'House' %}selected{% endif %}>House</option>
+        <option value="Senate" {% if chamber == 'Senate' %}selected{% endif %}>Senate</option>
+    </select>
+    <select name="congress">
+        <option value="">All Congresses</option>
+        {% for c in congresses %}
+        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress }}th Congress</option>
+        {% endfor %}
+    </select>
+    <select name="committee">
+        <option value="">All Committees</option>
+        {% for c in committees %}
+        <option value="{{ c.id }}" {% if committee|string == c.id|string %}selected{% endif %}>{{ c.name|truncate(50) }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if q or chamber or congress or committee %}
+    <a href="/hearings" class="btn btn-outline">Clear</a>
+    {% endif %}
+</form>
+
+<div class="results-info">
+    Showing {{ hearings|length }} of {{ "{:,}".format(total) }} hearings
+    {% if q %} matching "{{ q }}"{% endif %}
+</div>
+
+{% if hearings %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width:50%">Hearing</th>
+            <th>Committee</th>
+            <th>Chamber</th>
+            <th class="date-col">Date</th>
+            <th class="count-col">Witnesses</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in hearings %}
+        <tr>
+            <td class="name-col"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(80) }}</a></td>
+            <td style="font-size:0.85rem">{{ (h.committee_names or '—')|truncate(45) }}</td>
+            <td><span class="badge {% if h.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ h.chamber }}</span></td>
+            <td class="date-col">{{ h.date or '—' }}</td>
+            <td class="count-col">
+                {% if h.witness_count %}
+                <span class="badge badge-count">{{ h.witness_count }}</span>
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <h2>No hearings found</h2>
+    <p>Try adjusting your search or filters.</p>
+</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">&laquo; Previous</a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+        <a href="?page={{ p }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+        <span class="disabled">...</span>
+        {% endif %}
+    {% endfor %}
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Congressional Witness Database{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="nav-brand">
+                <a href="/">Congressional Witness Database</a>
+            </div>
+            <div class="nav-links">
+                <a href="/witnesses" {% if request.path == '/witnesses' %}class="active"{% endif %}>Witnesses</a>
+                <a href="/hearings" {% if request.path == '/hearings' %}class="active"{% endif %}>Hearings</a>
+                <a href="/titles" {% if request.path == '/titles' %}class="active"{% endif %}>Titles</a>
+                <a href="/committees" {% if request.path == '/committees' %}class="active"{% endif %}>Committees</a>
+                <a href="/search" {% if request.path == '/search' %}class="active"{% endif %}>Search</a>
+            </div>
+            <form class="nav-search" action="/search" method="GET">
+                <input type="text" name="q" placeholder="Search witnesses, hearings, titles..." value="{{ request.args.get('q', '') }}">
+            </form>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <p>Congressional Witness Database &mdash; Data sourced from <a href="https://api.congress.gov" target="_blank">Congress.gov API</a> and <a href="https://api.govinfo.gov" target="_blank">GovInfo API</a></p>
+        <p class="stats-line">{{ "{:,}".format(total_witnesses) }} witnesses &middot; {{ "{:,}".format(total_hearings) }} hearings &middot; {{ "{:,}".format(total_appearances) }} appearances</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Search - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Search</h1>
+</div>
+
+<form class="filter-bar" method="GET" action="/search" style="margin-bottom:2rem">
+    <input type="text" name="q" class="search-input" placeholder="Search by witness name, hearing topic, title, or organization..." value="{{ q }}" autofocus style="font-size:1.05rem; padding:0.6rem 1rem">
+    <button type="submit" class="btn btn-primary" style="padding:0.6rem 1.5rem">Search</button>
+</form>
+
+{% if q %}
+    {% if witness_results %}
+    <div class="search-section">
+        <h2 class="section-title">Witnesses ({{ witness_results|length }}{% if witness_results|length == 20 %}+{% endif %})</h2>
+        {% for w in witness_results %}
+        <div class="search-result">
+            <div class="result-title"><a href="/witness/{{ w.id }}">{{ w.name }}</a></div>
+            <div class="result-meta">
+                {{ w.appearance_count }} appearance{{ 's' if w.appearance_count != 1 }}
+                {% if w.first_appearance_date %} &middot; {{ w.first_appearance_date }} to {{ w.last_appearance_date }}{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if hearing_results %}
+    <div class="search-section">
+        <h2 class="section-title">Hearings ({{ hearing_results|length }}{% if hearing_results|length == 20 %}+{% endif %})</h2>
+        {% for h in hearing_results %}
+        <div class="search-result">
+            <div class="result-title"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(90) }}</a></div>
+            <div class="result-meta">
+                <span class="badge {% if h.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ h.chamber }}</span>
+                {% if h.date %} {{ h.date }}{% endif %}
+                {% if h.committee_names %} &middot; {{ h.committee_names|truncate(50) }}{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if title_results %}
+    <div class="search-section">
+        <h2 class="section-title">Titles ({{ title_results|length }}{% if title_results|length == 20 %}+{% endif %})</h2>
+        {% for t in title_results %}
+        <div class="search-result">
+            <div class="result-title"><a href="/title/{{ t.title }}{% if t.organization %}?org={{ t.organization }}{% endif %}">{{ t.title }}</a></div>
+            <div class="result-meta">
+                {% if t.organization %}{{ t.organization }} &middot; {% endif %}
+                Held by: <a href="/witness/{{ t.witness_id }}">{{ t.name }}</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not witness_results and not hearing_results and not title_results %}
+    <div class="empty-state">
+        <h2>No results found</h2>
+        <p>Try different search terms or browse by <a href="/witnesses">witnesses</a>, <a href="/hearings">hearings</a>, or <a href="/titles">titles</a>.</p>
+    </div>
+    {% endif %}
+{% endif %}
+{% endblock %}

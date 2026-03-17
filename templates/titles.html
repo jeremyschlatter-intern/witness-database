@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Titles - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Titles &amp; Positions</h1>
+    <p class="subtitle">Browse witnesses by their official title or position. Track who has held each title across different hearings.</p>
+</div>
+
+<form class="filter-bar" method="GET" action="/titles">
+    <input type="text" name="q" class="search-input" placeholder="Search titles (e.g., Administrator, Director, Secretary...)" value="{{ q }}">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if q %}
+    <a href="/titles" class="btn btn-outline">Clear</a>
+    {% endif %}
+</form>
+
+<div class="results-info">
+    {{ "{:,}".format(total) }} unique title/organization combinations
+</div>
+
+{% if titles %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Organization</th>
+            <th class="count-col">Holders</th>
+            <th>People</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in titles %}
+        <tr>
+            <td class="name-col">
+                <a href="/title/{{ t.title }}{% if t.organization %}?org={{ t.organization }}{% endif %}">{{ t.title }}</a>
+            </td>
+            <td>{{ t.organization or '—' }}</td>
+            <td class="count-col"><span class="badge badge-count">{{ t.holder_count }}</span></td>
+            <td style="font-size:0.85rem; color:var(--text-light)">{{ t.holders|truncate(80) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <h2>No titles found</h2>
+    <p>Try a different search term.</p>
+</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&q={{ q }}">&laquo; Previous</a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+        <a href="?page={{ p }}&q={{ q }}">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+        <span class="disabled">...</span>
+        {% endif %}
+    {% endfor %}
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&q={{ q }}">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
