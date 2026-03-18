@@ -16,7 +16,7 @@
     <select name="congress">
         <option value="">All Congresses</option>
         {% for c in congresses %}
-        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress }}th Congress</option>
+        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress|congress_ordinal }} Congress</option>
         {% endfor %}
     </select>
     <select name="committee">
@@ -29,18 +29,12 @@
     {% if q or chamber or congress or committee or date_from or date_to %}
     <a href="/hearings" class="btn btn-outline">Clear</a>
     {% endif %}
-</form>
-<div class="filter-bar" style="margin-top:-0.5rem">
-    <label style="font-size:0.85rem; color:var(--text-muted)">Date range:</label>
-    <input type="date" name="date_from" value="{{ date_from }}" form="date-form" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
-    <span style="color:var(--text-muted)">to</span>
-    <input type="date" name="date_to" value="{{ date_to }}" form="date-form" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
-</div>
-<form id="date-form" method="GET" action="/hearings" style="display:none">
-    <input type="hidden" name="q" value="{{ q }}">
-    <input type="hidden" name="chamber" value="{{ chamber }}">
-    <input type="hidden" name="congress" value="{{ congress }}">
-    <input type="hidden" name="committee" value="{{ committee }}">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-left:auto">
+        <label style="font-size:0.85rem; color:var(--text-muted); white-space:nowrap">Date:</label>
+        <input type="date" name="date_from" value="{{ date_from }}" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
+        <span style="color:var(--text-muted)">&ndash;</span>
+        <input type="date" name="date_to" value="{{ date_to }}" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
+    </div>
 </form>
 
 <div class="results-info">

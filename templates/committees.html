@@ -20,7 +20,7 @@
         {% for c in committees %}
         {% if c.hearing_count > 0 %}
         <tr>
-            <td class="name-col"><a href="/hearings?committee={{ c.id }}">{{ c.name }}</a></td>
+            <td class="name-col"><a href="/committee/{{ c.id }}">{{ c.name }}</a></td>
             <td><span class="badge {% if c.chamber == 'Senate' %}badge-senate{% elif c.chamber == 'House' %}badge-house{% endif %}">{{ c.chamber or '—' }}</span></td>
             <td class="count-col"><span class="badge badge-count">{{ c.hearing_count }}</span></td>
             <td class="count-col">{{ "{:,}".format(c.witness_count) if c.witness_count else '—' }}</td>

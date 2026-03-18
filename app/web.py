@@ -6,6 +6,7 @@ import math
 import os
 import re
 import sys
+from urllib.parse import urlencode
 
 from flask import Flask, render_template, request, jsonify, g, Response
 
@@ -19,6 +20,71 @@ app = Flask(
 )
 
 PER_PAGE = 50
+
+# Common abbreviations used in congressional testimony
+ABBREVIATIONS = {
+    'FAA': 'Federal Aviation Administration',
+    'FDA': 'Food and Drug Administration',
+    'FBI': 'Federal Bureau of Investigation',
+    'CIA': 'Central Intelligence Agency',
+    'NSA': 'National Security Agency',
+    'EPA': 'Environmental Protection Agency',
+    'DOD': 'Department of Defense',
+    'DOJ': 'Department of Justice',
+    'DOE': 'Department of Energy',
+    'DOT': 'Department of Transportation',
+    'DHS': 'Department of Homeland Security',
+    'HHS': 'Department of Health and Human Services',
+    'HUD': 'Department of Housing and Urban Development',
+    'VA': 'Department of Veterans Affairs',
+    'SEC': 'Securities and Exchange Commission',
+    'FCC': 'Federal Communications Commission',
+    'FTC': 'Federal Trade Commission',
+    'FEMA': 'Federal Emergency Management Agency',
+    'IRS': 'Internal Revenue Service',
+    'OMB': 'Office of Management and Budget',
+    'GAO': 'Government Accountability Office',
+    'CBO': 'Congressional Budget Office',
+    'NOAA': 'National Oceanic and Atmospheric Administration',
+    'NASA': 'National Aeronautics and Space Administration',
+    'NIH': 'National Institutes of Health',
+    'CDC': 'Centers for Disease Control and Prevention',
+    'USDA': 'Department of Agriculture',
+    'SBA': 'Small Business Administration',
+    'NTSB': 'National Transportation Safety Board',
+    'TSA': 'Transportation Security Administration',
+    'CBP': 'Customs and Border Protection',
+    'ICE': 'Immigration and Customs Enforcement',
+    'ATF': 'Bureau of Alcohol Tobacco Firearms and Explosives',
+    'DEA': 'Drug Enforcement Administration',
+    'CISA': 'Cybersecurity and Infrastructure Security Agency',
+    'CFPB': 'Consumer Financial Protection Bureau',
+    'FERC': 'Federal Energy Regulatory Commission',
+    'NRC': 'Nuclear Regulatory Commission',
+    'OSHA': 'Occupational Safety and Health Administration',
+    'OPM': 'Office of Personnel Management',
+    'GSA': 'General Services Administration',
+    'USPS': 'Postal Service',
+    'SSA': 'Social Security Administration',
+    'NIST': 'National Institute of Standards and Technology',
+    'NSF': 'National Science Foundation',
+    'DOL': 'Department of Labor',
+    'DOS': 'Department of State',
+    'USTR': 'United States Trade Representative',
+    'FinCEN': 'Financial Crimes Enforcement Network',
+    'DARPA': 'Defense Advanced Research Projects Agency',
+    'FDIC': 'Federal Deposit Insurance Corporation',
+    'NCUA': 'National Credit Union Administration',
+    'CFTC': 'Commodity Futures Trading Commission',
+    'CPSC': 'Consumer Product Safety Commission',
+    'EEOC': 'Equal Employment Opportunity Commission',
+    'FMC': 'Federal Maritime Commission',
+    'NLRB': 'National Labor Relations Board',
+    'PBGC': 'Pension Benefit Guaranty Corporation',
+    'USAID': 'United States Agency for International Development',
+    'ONDCP': 'Office of National Drug Control Policy',
+    'DNI': 'Director of National Intelligence',
+}
 
 
 def get_connection():
@@ -53,17 +119,31 @@ def is_member_of_congress(titles_str):
     return any(ind in lower for ind in moc_indicators)
 
 
+def expand_abbreviations(q):
+    """Expand known abbreviations in a search query."""
+    words = q.split()
+    expanded_words = []
+    has_expansion = False
+    for word in words:
+        upper = word.upper()
+        if upper in ABBREVIATIONS:
+            expanded_words.append(ABBREVIATIONS[upper])
+            has_expansion = True
+        else:
+            expanded_words.append(word)
+    if has_expansion:
+        return ' '.join(expanded_words)
+    return None
+
+
 def fts_query(q):
     """Convert a user search query into an FTS5 query."""
-    # If it looks like a phrase (multiple words), wrap in quotes
     q = q.strip()
     if not q:
         return q
-    # Escape special FTS characters
     q = q.replace('"', '')
     words = q.split()
     if len(words) > 1:
-        # Try phrase match with OR fallback to individual terms
         return f'"{q}" OR ({" ".join(words)})'
     return q
 
@@ -71,6 +151,17 @@ def fts_query(q):
 @app.template_filter('clean_name')
 def clean_name_filter(name):
     return display_name(name)
+
+
+@app.template_filter('congress_ordinal')
+def congress_ordinal_filter(n):
+    """Convert congress number to ordinal (e.g., 119 -> 119th)."""
+    n = int(n)
+    if 11 <= (n % 100) <= 13:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return f"{n}{suffix}"
 
 
 @app.context_processor
@@ -581,14 +672,58 @@ def committees_list():
     return render_template("committees.html", committees=committees)
 
 
+@app.route("/committee/<int:committee_id>")
+def committee_detail(committee_id):
+    db = get_connection()
+    committee = db.execute("SELECT * FROM committees WHERE id = ?", (committee_id,)).fetchone()
+    if not committee:
+        return "Committee not found", 404
+
+    hearings = db.execute("""
+        SELECT h.*,
+            (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
+        FROM hearings h
+        JOIN hearing_committees hc ON h.id = hc.hearing_id
+        WHERE hc.committee_id = ?
+        ORDER BY h.date DESC
+        LIMIT 100
+    """, (committee_id,)).fetchall()
+
+    top_witnesses = db.execute("""
+        SELECT w.id, w.name, w.appearance_count,
+            COUNT(*) as committee_appearances,
+            (SELECT GROUP_CONCAT(wt.title, '; ') FROM witness_titles wt WHERE wt.witness_id = w.id LIMIT 1) as titles
+        FROM witnesses w
+        JOIN witness_appearances wa ON wa.witness_id = w.id
+        JOIN hearing_committees hc ON hc.hearing_id = wa.hearing_id
+        WHERE hc.committee_id = ?
+        GROUP BY w.id
+        ORDER BY committee_appearances DESC
+        LIMIT 20
+    """, (committee_id,)).fetchall()
+
+    return render_template("committee_detail.html",
+                           committee=committee,
+                           hearings=hearings,
+                           top_witnesses=top_witnesses)
+
+
 @app.route("/search")
 def search():
     q = request.args.get("q", "").strip()
     if not q:
         return render_template("search.html", q="",
-                               witness_results=[], hearing_results=[], title_results=[])
+                               witness_results=[], hearing_results=[], title_results=[],
+                               expanded_query=None)
 
     db = get_connection()
+
+    # Expand abbreviations (e.g., "FAA" -> "Federal Aviation Administration")
+    expanded = expand_abbreviations(q)
+    search_queries = [q]
+    if expanded:
+        search_queries.append(expanded)
+
     fts_q = fts_query(q)
     like_q = f"%{q}%"
 
@@ -596,7 +731,8 @@ def search():
     try:
         witness_results = db.execute("""
             SELECT w.*, 'witness' as result_type,
-                (SELECT GROUP_CONCAT(wt.title, '; ')
+                (SELECT GROUP_CONCAT(wt.title || CASE WHEN wt.organization IS NOT NULL AND wt.organization != ''
+                    THEN ', ' || wt.organization ELSE '' END, '; ')
                  FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
             FROM witnesses w
             JOIN witnesses_fts ON witnesses_fts.rowid = w.id
@@ -607,7 +743,8 @@ def search():
     except Exception:
         witness_results = db.execute("""
             SELECT w.*, 'witness' as result_type,
-                (SELECT GROUP_CONCAT(wt.title, '; ')
+                (SELECT GROUP_CONCAT(wt.title || CASE WHEN wt.organization IS NOT NULL AND wt.organization != ''
+                    THEN ', ' || wt.organization ELSE '' END, '; ')
                  FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
             FROM witnesses w
             WHERE w.name LIKE ?
@@ -615,90 +752,104 @@ def search():
             LIMIT 25
         """, (like_q,)).fetchall()
 
-    # Search hearings
-    try:
-        hearing_results = db.execute("""
-            SELECT h.*, 'hearing' as result_type,
-                GROUP_CONCAT(c.name) as committee_names,
-                (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
-            FROM hearings h
-            JOIN hearings_fts ON hearings_fts.rowid = h.id
-            LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
-            LEFT JOIN committees c ON hc.committee_id = c.id
-            WHERE hearings_fts MATCH ?
-            GROUP BY h.id
-            ORDER BY h.date DESC
-            LIMIT 25
-        """, (fts_q,)).fetchall()
-    except Exception:
-        hearing_results = db.execute("""
-            SELECT h.*, 'hearing' as result_type,
-                GROUP_CONCAT(c.name) as committee_names,
-                (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
-            FROM hearings h
-            LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
-            LEFT JOIN committees c ON hc.committee_id = c.id
-            WHERE h.title LIKE ?
-            GROUP BY h.id
-            ORDER BY h.date DESC
-            LIMIT 25
-        """, (like_q,)).fetchall()
+    # Search hearings - try original query and expanded version
+    hearing_results = []
+    for sq in search_queries:
+        sq_fts = fts_query(sq)
+        try:
+            hearing_results = db.execute("""
+                SELECT h.*, 'hearing' as result_type,
+                    GROUP_CONCAT(c.name) as committee_names,
+                    (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
+                FROM hearings h
+                JOIN hearings_fts ON hearings_fts.rowid = h.id
+                LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
+                LEFT JOIN committees c ON hc.committee_id = c.id
+                WHERE hearings_fts MATCH ?
+                GROUP BY h.id
+                ORDER BY h.date DESC
+                LIMIT 25
+            """, (sq_fts,)).fetchall()
+        except Exception:
+            hearing_results = db.execute("""
+                SELECT h.*, 'hearing' as result_type,
+                    GROUP_CONCAT(c.name) as committee_names,
+                    (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
+                FROM hearings h
+                LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
+                LEFT JOIN committees c ON hc.committee_id = c.id
+                WHERE h.title LIKE ?
+                GROUP BY h.id
+                ORDER BY h.date DESC
+                LIMIT 25
+            """, (f"%{sq}%",)).fetchall()
+        if hearing_results:
+            break
 
     # Search titles and organizations
-    # Match each word against the combined title+org, requiring ALL words to match
-    # For short all-caps words (likely abbreviations), also try matching against org name
-    words = [w for w in q.split() if len(w) > 1]
-    combined_field = "(wt.title || ' ' || COALESCE(wt.organization, ''))"
-    if words:
-        word_clauses = []
-        word_params = []
-        for word in words:
-            word_clauses.append(f"{combined_field} LIKE ?")
-            word_params.append(f"%{word}%")
-
-        # Try with ALL words matching
-        title_results = db.execute(f"""
-            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
-                w.appearance_count, 'title' as result_type
-            FROM witness_titles wt
-            JOIN witnesses w ON wt.witness_id = w.id
-            WHERE {' AND '.join(word_clauses)}
-            ORDER BY w.appearance_count DESC
-            LIMIT 25
-        """, word_params).fetchall()
-
-        # If no results, try with ANY word matching
-        if not title_results:
-            any_clauses = []
-            any_params = []
+    # Try original query AND expanded abbreviations
+    title_results = []
+    for sq in search_queries:
+        words = [w for w in sq.split() if len(w) > 1]
+        combined_field = "(wt.title || ' ' || COALESCE(wt.organization, ''))"
+        if words:
+            word_clauses = []
+            word_params = []
             for word in words:
-                any_clauses.append(f"{combined_field} LIKE ?")
-                any_params.append(f"%{word}%")
+                word_clauses.append(f"{combined_field} LIKE ?")
+                word_params.append(f"%{word}%")
+
             title_results = db.execute(f"""
                 SELECT wt.title, wt.organization, w.name, w.id as witness_id,
                     w.appearance_count, 'title' as result_type
                 FROM witness_titles wt
                 JOIN witnesses w ON wt.witness_id = w.id
-                WHERE {' OR '.join(any_clauses)}
+                WHERE {' AND '.join(word_clauses)}
                 ORDER BY w.appearance_count DESC
                 LIMIT 25
-            """, any_params).fetchall()
-    else:
-        title_results = db.execute("""
-            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
-                w.appearance_count, 'title' as result_type
-            FROM witness_titles wt
-            JOIN witnesses w ON wt.witness_id = w.id
-            WHERE wt.title LIKE ? OR wt.organization LIKE ?
-            ORDER BY w.appearance_count DESC
-            LIMIT 25
-        """, (like_q, like_q)).fetchall()
+            """, word_params).fetchall()
+
+            if not title_results:
+                any_clauses = []
+                any_params = []
+                for word in words:
+                    any_clauses.append(f"{combined_field} LIKE ?")
+                    any_params.append(f"%{word}%")
+                title_results = db.execute(f"""
+                    SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                        w.appearance_count, 'title' as result_type
+                    FROM witness_titles wt
+                    JOIN witnesses w ON wt.witness_id = w.id
+                    WHERE {' OR '.join(any_clauses)}
+                    ORDER BY w.appearance_count DESC
+                    LIMIT 25
+                """, any_params).fetchall()
+        else:
+            sq_like = f"%{sq}%"
+            title_results = db.execute("""
+                SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                    w.appearance_count, 'title' as result_type
+                FROM witness_titles wt
+                JOIN witnesses w ON wt.witness_id = w.id
+                WHERE wt.title LIKE ? OR wt.organization LIKE ?
+                ORDER BY w.appearance_count DESC
+                LIMIT 25
+            """, (sq_like, sq_like)).fetchall()
+
+        if title_results:
+            break
 
     return render_template("search.html",
                            q=q,
                            witness_results=witness_results,
                            hearing_results=hearing_results,
-                           title_results=title_results)
+                           title_results=title_results,
+                           expanded_query=expanded)
+
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
 
 
 @app.route("/api/witnesses")

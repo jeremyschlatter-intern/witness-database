@@ -27,7 +27,7 @@
     <tbody>
         {% for h in holders %}
         <tr>
-            <td class="name-col"><a href="/witness/{{ h.id }}">{{ h.name }}</a></td>
+            <td class="name-col"><a href="/witness/{{ h.id }}">{{ h.name|clean_name }}</a></td>
             <td>{{ h.organization or '—' }}</td>
             <td class="count-col"><span class="badge badge-count">{{ h.appearance_count }}</span></td>
             <td class="date-col">{{ h.start_date or h.first_appearance_date or '—' }}</td>

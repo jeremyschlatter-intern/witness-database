@@ -21,6 +21,13 @@
     </div>
 </div>
 
+<div class="quick-search" style="background:var(--white); border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; margin-bottom:1.5rem">
+    <form action="/search" method="GET" style="display:flex; gap:0.75rem; align-items:center">
+        <input type="text" name="q" placeholder="Search witnesses, hearings, titles, or agencies (e.g., FAA, FBI, EPA)..." style="flex:1; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.95rem">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+</div>
+
 <div class="coverage-note">
     <strong>Data coverage:</strong> Structured witness data is sourced from the Congress.gov Committee Meeting API. House hearings have comprehensive witness records; Senate witness data is available for hearings where the API provides it. The 117th Congress House data is currently unavailable due to an upstream API issue.
 </div>
@@ -111,7 +118,7 @@
         <tbody>
             {% for s in congress_stats %}
             <tr>
-                <td><a href="/hearings?congress={{ s.congress }}">{{ s.congress }}th Congress</a></td>
+                <td><a href="/hearings?congress={{ s.congress }}">{{ s.congress|congress_ordinal }} Congress</a></td>
                 <td><span class="badge {% if s.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ s.chamber }}</span></td>
                 <td class="count-col">{{ "{:,}".format(s.hearing_count) }}</td>
                 <td class="count-col">{{ "{:,}".format(s.witness_count) if s.witness_count else '&mdash;'|safe }}</td>

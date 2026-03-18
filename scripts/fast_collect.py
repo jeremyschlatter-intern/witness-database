@@ -29,10 +29,10 @@ session.params = {"api_key": CONGRESS_API_KEY, "format": "json"}
 import threading
 rate_lock = threading.Lock()
 last_request_time = 0
-MIN_DELAY = 0.06  # ~16 req/sec, well within 20K/day limit
+MIN_DELAY = 1.0  # 1 req/sec, very conservative to recover from rate limiting
 
 
-def rate_limited_get(url, params=None, retries=3):
+def rate_limited_get(url, params=None, retries=5):
     """Thread-safe rate-limited GET."""
     global last_request_time
     for attempt in range(retries):
@@ -46,16 +46,26 @@ def rate_limited_get(url, params=None, retries=3):
         try:
             resp = session.get(url, params=params, timeout=30)
             if resp.status_code == 429:
-                print(f"  Rate limited, waiting 30s...")
-                time.sleep(30)
+                # Respect Retry-After header if present
+                retry_after = resp.headers.get('Retry-After')
+                if retry_after:
+                    wait_time = min(int(retry_after) + 5, 1800)  # Cap at 30 min
+                else:
+                    wait_time = min(60 * (attempt + 1), 300)
+                remaining = resp.headers.get('X-RateLimit-Remaining', '?')
+                print(f"  Rate limited (remaining: {remaining}), waiting {wait_time}s (attempt {attempt+1})...")
+                time.sleep(wait_time)
                 continue
             if resp.status_code == 404:
+                return None
+            if resp.status_code == 500:
+                print(f"  Server error 500 for {url}, skipping...")
                 return None
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.RequestException as e:
             if attempt < retries - 1:
-                time.sleep(2)
+                time.sleep(5 * (attempt + 1))
             else:
                 print(f"  Error fetching {url}: {e}")
                 return None
@@ -152,7 +162,7 @@ def collect_all_meetings(congresses):
 
             # Fetch details in parallel
             results = []
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=1) as executor:
                 futures = {}
                 for eid, ch in new_ids:
                     f = executor.submit(fetch_meeting_detail, congress, ch, eid)
@@ -370,7 +380,7 @@ def collect_hearing_transcripts(congresses):
                     if jacket:
                         details_to_fetch.append((jacket, chamber))
 
-                with ThreadPoolExecutor(max_workers=4) as executor:
+                with ThreadPoolExecutor(max_workers=1) as executor:
                     futures = {}
                     for jacket, ch in details_to_fetch:
                         f = executor.submit(

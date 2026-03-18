@@ -6,20 +6,45 @@
 </div>
 
 <form class="filter-bar" method="GET" action="/search" style="margin-bottom:2rem">
-    <input type="text" name="q" class="search-input" placeholder="Search by witness name, hearing topic, title, or organization..." value="{{ q }}" autofocus style="font-size:1.05rem; padding:0.6rem 1rem">
+    <input type="text" name="q" class="search-input" placeholder="Search by witness name, hearing topic, title, organization, or abbreviation (e.g., FAA, FBI)..." value="{{ q }}" autofocus style="font-size:1.05rem; padding:0.6rem 1rem">
     <button type="submit" class="btn btn-primary" style="padding:0.6rem 1.5rem">Search</button>
 </form>
 
 {% if q %}
+    {% if expanded_query %}
+    <div class="coverage-note" style="margin-bottom:1.5rem; border-left-color:var(--primary)">
+        Also searching for: <strong>{{ expanded_query }}</strong>
+    </div>
+    {% endif %}
+
+    {% if title_results %}
+    <div class="search-section">
+        <h2 class="section-title">Titles &amp; Positions ({{ title_results|length }}{% if title_results|length >= 25 %}+{% endif %})</h2>
+        {% for t in title_results %}
+        <div class="search-result">
+            <div class="result-title"><a href="/witness/{{ t.witness_id }}">{{ t.name|clean_name }}</a></div>
+            <div class="result-meta">
+                <span class="badge" style="background:#e2e8f0; color:var(--text)">{{ t.title }}</span>
+                {% if t.organization %}<span style="margin-left:0.25rem">{{ t.organization }}</span>{% endif %}
+                &middot; {{ t.appearance_count }} total appearance{{ 's' if t.appearance_count != 1 }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if witness_results %}
     <div class="search-section">
-        <h2 class="section-title">Witnesses ({{ witness_results|length }}{% if witness_results|length == 20 %}+{% endif %})</h2>
+        <h2 class="section-title">Witnesses ({{ witness_results|length }}{% if witness_results|length >= 25 %}+{% endif %})</h2>
         {% for w in witness_results %}
         <div class="search-result">
-            <div class="result-title"><a href="/witness/{{ w.id }}">{{ w.name }}</a></div>
+            <div class="result-title"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></div>
             <div class="result-meta">
                 {{ w.appearance_count }} appearance{{ 's' if w.appearance_count != 1 }}
                 {% if w.first_appearance_date %} &middot; {{ w.first_appearance_date }} to {{ w.last_appearance_date }}{% endif %}
+                {% if w.titles %}
+                <br><span style="color:var(--text-light); font-size:0.82rem">{{ w.titles|truncate(120) }}</span>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
@@ -28,7 +53,7 @@
 
     {% if hearing_results %}
     <div class="search-section">
-        <h2 class="section-title">Hearings ({{ hearing_results|length }}{% if hearing_results|length == 20 %}+{% endif %})</h2>
+        <h2 class="section-title">Hearings ({{ hearing_results|length }}{% if hearing_results|length >= 25 %}+{% endif %})</h2>
         {% for h in hearing_results %}
         <div class="search-result">
             <div class="result-title"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(90) }}</a></div>
@@ -36,21 +61,7 @@
                 <span class="badge {% if h.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ h.chamber }}</span>
                 {% if h.date %} {{ h.date }}{% endif %}
                 {% if h.committee_names %} &middot; {{ h.committee_names|truncate(50) }}{% endif %}
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if title_results %}
-    <div class="search-section">
-        <h2 class="section-title">Titles ({{ title_results|length }}{% if title_results|length == 20 %}+{% endif %})</h2>
-        {% for t in title_results %}
-        <div class="search-result">
-            <div class="result-title"><a href="/title/{{ t.title }}{% if t.organization %}?org={{ t.organization }}{% endif %}">{{ t.title }}</a></div>
-            <div class="result-meta">
-                {% if t.organization %}{{ t.organization }} &middot; {% endif %}
-                Held by: <a href="/witness/{{ t.witness_id }}">{{ t.name }}</a>
+                {% if h.witness_count %} &middot; {{ h.witness_count }} witness{{ 'es' if h.witness_count != 1 }}{% endif %}
             </div>
         </div>
         {% endfor %}
@@ -61,7 +72,23 @@
     <div class="empty-state">
         <h2>No results found</h2>
         <p>Try different search terms or browse by <a href="/witnesses">witnesses</a>, <a href="/hearings">hearings</a>, or <a href="/titles">titles</a>.</p>
+        <p style="margin-top:0.5rem; font-size:0.9rem">Tip: You can search by agency abbreviation (e.g., FAA, FBI, EPA) or by full name.</p>
     </div>
     {% endif %}
+{% else %}
+    <div class="empty-state" style="padding:2rem">
+        <h2 style="color:var(--text)">Search the Congressional Witness Database</h2>
+        <p>Find witnesses, hearings, and titles by name, topic, or organization.</p>
+        <div style="margin-top:1rem; text-align:left; max-width:500px; margin-left:auto; margin-right:auto">
+            <p style="font-size:0.9rem; color:var(--text-light); margin-bottom:0.5rem"><strong>Example searches:</strong></p>
+            <ul style="font-size:0.9rem; color:var(--text-muted); list-style:disc; padding-left:1.5rem; line-height:1.8">
+                <li><a href="/search?q=FAA+Administrator">FAA Administrator</a> &mdash; find who testified as FAA head</li>
+                <li><a href="/search?q=artificial+intelligence">artificial intelligence</a> &mdash; hearings on AI topics</li>
+                <li><a href="/search?q=FBI+Director">FBI Director</a> &mdash; FBI Directors who have testified</li>
+                <li><a href="/search?q=Boeing">Boeing</a> &mdash; witnesses from Boeing</li>
+                <li><a href="/search?q=Secretary+of+Defense">Secretary of Defense</a> &mdash; Defense Secretaries</li>
+            </ul>
+        </div>
+    </div>
 {% endif %}
 {% endblock %}

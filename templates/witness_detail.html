@@ -30,22 +30,26 @@
 {% if titles %}
 <div style="margin-bottom:1.5rem">
     <h2 class="section-title">Titles &amp; Positions</h2>
-    <div class="card">
-        <div class="title-list">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Organization</th>
+                <th class="date-col">Since</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
             {% for t in titles %}
-            <div class="title-item">
-                <div>
-                    <strong>{{ t.title }}</strong>
-                    {% if t.organization %}<br><span style="color:var(--text-muted); font-size:0.9rem">{{ t.organization }}</span>{% endif %}
-                </div>
-                <div>
-                    {% if t.start_date %}<span class="date-col">{{ t.start_date }}</span>{% endif %}
-                    <a href="/title/{{ t.title }}{% if t.organization %}?org={{ t.organization }}{% endif %}" style="font-size:0.85rem; margin-left:0.5rem">View all holders &rarr;</a>
-                </div>
-            </div>
+            <tr>
+                <td class="name-col">{{ t.title }}</td>
+                <td style="font-size:0.9rem; color:var(--text-light)">{{ t.organization or '' }}</td>
+                <td class="date-col">{{ t.start_date or '' }}</td>
+                <td><a href="/title/{{ t.title }}{% if t.organization %}?org={{ t.organization }}{% endif %}" style="font-size:0.82rem">All holders &rarr;</a></td>
+            </tr>
             {% endfor %}
-        </div>
-    </div>
+        </tbody>
+    </table>
 </div>
 {% endif %}
 
@@ -58,7 +62,7 @@
     </div>
     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.4rem">
         {% if a.hearing_date %}{{ a.hearing_date }}{% endif %}
-        &middot; {{ a.congress }}th Congress
+        &middot; {{ a.congress|congress_ordinal }} Congress
         {% if a.committee_names %} &middot; {{ a.committee_names|truncate(60) }}{% endif %}
     </div>
     {% if a.position or a.organization %}

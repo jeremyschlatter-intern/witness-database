@@ -13,7 +13,7 @@
         </div>
         {% endif %}
         <div class="meta-item">
-            <span class="meta-label">Congress:</span> {{ hearing.congress }}th
+            <span class="meta-label">Congress:</span> {{ hearing.congress|congress_ordinal }}
         </div>
         {% if hearing.committee_names %}
         <div class="meta-item">
@@ -38,11 +38,11 @@
         {% if hearing.transcript_pdf_url %}
         <a href="{{ hearing.transcript_pdf_url }}" target="_blank">Transcript PDF</a>
         {% endif %}
-        {% if hearing.congress_gov_url %}
-        <a href="{{ hearing.congress_gov_url }}" target="_blank">Congress.gov</a>
-        {% endif %}
         {% if hearing.govinfo_package_id %}
-        <a href="https://www.govinfo.gov/content/pkg/{{ hearing.govinfo_package_id }}/html/{{ hearing.govinfo_package_id }}.htm" target="_blank">GovInfo</a>
+        <a href="https://www.govinfo.gov/content/pkg/{{ hearing.govinfo_package_id }}/html/{{ hearing.govinfo_package_id }}.htm" target="_blank">GovInfo Full Text</a>
+        {% endif %}
+        {% if hearing.event_id %}
+        <a href="https://www.congress.gov/event/{{ hearing.congress }}th-congress/{{ hearing.chamber|lower }}-event/{{ hearing.event_id }}" target="_blank">Congress.gov</a>
         {% endif %}
     </div>
 </div>
@@ -63,8 +63,8 @@
         {% for w in witnesses %}
         <tr>
             <td class="name-col"><a href="/witness/{{ w.witness_id }}">{{ w.witness_name|clean_name }}</a></td>
-            <td>{{ w.position or '—' }}</td>
-            <td>{{ w.organization or '—' }}</td>
+            <td>{{ w.position or '' }}</td>
+            <td>{{ w.organization or '' }}</td>
             <td>
                 <div class="external-links" style="margin-top:0">
                     {% if w.testimony_count > 0 %}
@@ -90,7 +90,10 @@
 </table>
 {% else %}
 <div class="empty-state">
-    <p>No witness information available for this hearing.</p>
+    <p>No structured witness information available for this hearing.</p>
+    {% if hearing.govinfo_package_id %}
+    <p style="margin-top:0.5rem"><a href="https://www.govinfo.gov/content/pkg/{{ hearing.govinfo_package_id }}/html/{{ hearing.govinfo_package_id }}.htm" target="_blank">View the full transcript on GovInfo</a> to see witness testimony.</p>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

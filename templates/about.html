@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}About - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>About This Database</h1>
+</div>
+
+<div class="about-section">
+    <h2>What Is This?</h2>
+    <p>The Congressional Witness Database is a searchable index of witnesses who have testified before House and Senate committees from the 116th Congress (2019) to the present. It lets you look up who testified, when, before which committees, and in what capacity.</p>
+    <p>This tool is designed for congressional staff, journalists, researchers, and anyone who needs to quickly answer questions like:</p>
+    <ul>
+        <li>Who has served as FAA Administrator and when did they testify?</li>
+        <li>How many times has a particular person testified before Congress?</li>
+        <li>Which witnesses appeared before the House Judiciary Committee this year?</li>
+        <li>What hearings covered a specific topic?</li>
+    </ul>
+</div>
+
+<div class="about-section">
+    <h2>Data Sources</h2>
+    <p>All data comes from official government APIs:</p>
+    <ul>
+        <li><strong>Congress.gov Committee Meeting API</strong> &mdash; Structured witness data including names, titles, organizations, and links to written statements. This provides comprehensive witness data for House hearings from the 116th Congress onward.</li>
+        <li><strong>Congress.gov Hearing API</strong> &mdash; Hearing metadata and links to GovInfo transcripts.</li>
+        <li><strong>GovInfo API</strong> &mdash; Full hearing transcripts in HTML and PDF formats.</li>
+    </ul>
+</div>
+
+<div class="about-section">
+    <h2>Known Limitations</h2>
+    <ul>
+        <li><strong>Senate witness data:</strong> The Congress.gov Committee Meeting API does not provide structured witness information for most Senate hearings. Senate hearings are listed, but witnesses may not be indexed unless the API provides them.</li>
+        <li><strong>117th Congress House data:</strong> The Congress.gov API currently returns an error for 117th Congress House committee meetings, so this data is unavailable.</li>
+        <li><strong>Witness deduplication:</strong> The same person may appear under slightly different name variants. We use conservative matching to merge obvious duplicates (e.g., "Steve" and "Stephen" Dickson), but some edge cases may remain.</li>
+        <li><strong>Historical coverage:</strong> The database currently covers the 116th through 119th Congresses (January 2019 to present). Earlier hearings are not yet included.</li>
+    </ul>
+</div>
+
+<div class="about-section">
+    <h2>Features</h2>
+    <ul>
+        <li><strong>Smart search:</strong> Search by witness name, hearing topic, title/position, organization, or agency abbreviation (e.g., FAA, FBI, EPA, SEC).</li>
+        <li><strong>Title tracking:</strong> See who has held a given title (e.g., "Administrator") and when they testified in that capacity.</li>
+        <li><strong>CSV export:</strong> Download witness data as CSV for your own analysis.</li>
+        <li><strong>Direct links:</strong> Every hearing links to the original transcript on GovInfo and the meeting record on Congress.gov.</li>
+        <li><strong>Unique witness IDs:</strong> Each witness has a stable ID (e.g., W-00001) for reliable cross-referencing.</li>
+    </ul>
+</div>
+
+<div class="about-section">
+    <h2>API Access</h2>
+    <p>This database provides a JSON API for programmatic access:</p>
+    <ul>
+        <li><code>/api/witnesses</code> &mdash; List witnesses (supports <code>?q=</code> search and <code>?limit=</code>)</li>
+        <li><code>/api/stats</code> &mdash; Database statistics</li>
+    </ul>
+</div>
+{% endblock %}

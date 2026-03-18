@@ -557,6 +557,58 @@ footer a { color: var(--text-muted); text-decoration: underline; }
 
 .stats-line { margin-top: 0.25rem; font-size: 0.8rem; }
 
+/* About page */
+.about-section {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.about-section h2 {
+    font-size: 1.15rem;
+    color: var(--primary);
+    margin-bottom: 0.75rem;
+}
+
+.about-section p {
+    margin-bottom: 0.75rem;
+    line-height: 1.7;
+}
+
+.about-section ul {
+    padding-left: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.about-section li {
+    margin-bottom: 0.3rem;
+    line-height: 1.6;
+}
+
+/* Quick search on homepage */
+.quick-search input:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.15);
+}
+
+/* Filter bar date inputs */
+.filter-bar input[type="date"] {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: var(--white);
+}
+
+.filter-bar input[type="date"]:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.15);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     nav { flex-wrap: wrap; height: auto; padding: 0.75rem 1rem; }
@@ -567,4 +619,12 @@ footer a { color: var(--text-muted); text-decoration: underline; }
     .filter-bar { flex-direction: column; }
     .filter-bar select, .filter-bar input { width: 100%; }
     .detail-meta { flex-direction: column; gap: 0.5rem; }
+}
+
+/* Print styles */
+@media print {
+    header, footer, .filter-bar, .pagination, .btn, .nav-search { display: none; }
+    main { max-width: 100%; padding: 0; }
+    .data-table { font-size: 0.8rem; }
+    a { color: var(--text); text-decoration: none; }
 }

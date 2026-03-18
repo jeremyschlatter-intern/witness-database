@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ committee.name }} - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="detail-header">
+    <h1>{{ committee.name }}</h1>
+    <div class="detail-meta">
+        {% if committee.chamber %}
+        <div class="meta-item">
+            <span class="badge {% if committee.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ committee.chamber }}</span>
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="meta-label">Hearings:</span> {{ hearings|length }}
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Code:</span> {{ committee.system_code }}
+        </div>
+    </div>
+</div>
+
+{% if top_witnesses %}
+<h2 class="section-title">Most Frequent Witnesses Before This Committee</h2>
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Witness</th>
+            <th>Title</th>
+            <th class="count-col">Before Committee</th>
+            <th class="count-col">Total Appearances</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for w in top_witnesses %}
+        <tr>
+            <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></td>
+            <td style="font-size:0.85rem; color:var(--text-light)">
+                {% if w.titles %}{{ w.titles.split(';')[0]|truncate(50) }}{% endif %}
+            </td>
+            <td class="count-col"><span class="badge badge-count">{{ w.committee_appearances }}</span></td>
+            <td class="count-col">{{ w.appearance_count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2 class="section-title" style="margin-top:1.5rem">Hearings ({{ hearings|length }})</h2>
+{% if hearings %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width:60%">Hearing</th>
+            <th class="date-col">Date</th>
+            <th class="count-col">Witnesses</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in hearings %}
+        <tr>
+            <td class="name-col"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(90) }}</a></td>
+            <td class="date-col">{{ h.date or '' }}</td>
+            <td class="count-col">
+                {% if h.witness_count %}<span class="badge badge-count">{{ h.witness_count }}</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No hearings found for this committee.</p>
+</div>
+{% endif %}
+{% endblock %}
