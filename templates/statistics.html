@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Statistics - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Database Statistics</h1>
+    <p class="subtitle">An overview of the data in the Congressional Witness Database.</p>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.witnesses) }}</div>
+        <div class="stat-label">Witnesses</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.hearings) }}</div>
+        <div class="stat-label">Hearings</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.appearances) }}</div>
+        <div class="stat-label">Appearances</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.committees) }}</div>
+        <div class="stat-label">Committees</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.titles) }}</div>
+        <div class="stat-label">Unique Titles</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(stats.has_statement) }}</div>
+        <div class="stat-label">Written Statements</div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div>
+        <h2 class="section-title">Top Organizations Sending Witnesses</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Organization</th>
+                    <th class="count-col">Witnesses</th>
+                    <th class="count-col">Hearings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for org in top_orgs %}
+                <tr>
+                    <td style="color:var(--text-muted); font-size:0.8rem">{{ loop.index }}</td>
+                    <td><a href="/search?q={{ org.organization|urlencode }}">{{ org.organization|truncate(60) }}</a></td>
+                    <td class="count-col">{{ org.witness_count }}</td>
+                    <td class="count-col">{{ org.hearing_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div>
+        <h2 class="section-title">Most Active Committees</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Committee</th>
+                    <th class="count-col">Hearings</th>
+                    <th class="count-col">Witnesses</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in top_committees %}
+                <tr>
+                    <td style="color:var(--text-muted); font-size:0.8rem">{{ loop.index }}</td>
+                    <td>
+                        <a href="/committee/{{ c.id }}">{{ c.name|truncate(45) }}</a>
+                        <span class="badge {% if c.chamber == 'Senate' %}badge-senate{% elif c.chamber == 'House' %}badge-house{% endif %}" style="font-size:0.7rem; margin-left:0.25rem">{{ c.chamber }}</span>
+                    </td>
+                    <td class="count-col">{{ c.hearing_count }}</td>
+                    <td class="count-col">{{ c.witness_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div style="margin-top:2rem">
+    <h2 class="section-title">Repeat Witnesses (3+ Appearances, Non-Members)</h2>
+    <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem">Witnesses who have testified before Congress three or more times, excluding Members of Congress.</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Witness</th>
+                <th>Title / Position</th>
+                <th class="count-col">Appearances</th>
+                <th class="date-col">First</th>
+                <th class="date-col">Latest</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in repeat_witnesses %}
+            <tr>
+                <td style="color:var(--text-muted); font-size:0.8rem">{{ loop.index }}</td>
+                <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></td>
+                <td style="font-size:0.85rem; color:var(--text-light)">{{ (w.titles or '').split(';')[0]|truncate(50) }}</td>
+                <td class="count-col"><span class="badge badge-count">{{ w.appearance_count }}</span></td>
+                <td class="date-col">{{ w.first_appearance_date or '' }}</td>
+                <td class="date-col">{{ w.last_appearance_date or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if coverage %}
+<div style="margin-top:2rem">
+    <h2 class="section-title">Data Coverage</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Congress</th>
+                <th>Chamber</th>
+                <th class="count-col">Hearings</th>
+                <th class="count-col">Witnesses</th>
+                <th class="count-col">With Transcripts</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in coverage %}
+            <tr>
+                <td><a href="/hearings?congress={{ c.congress }}">{{ c.congress|congress_ordinal }}</a></td>
+                <td><span class="badge {% if c.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ c.chamber }}</span></td>
+                <td class="count-col">{{ "{:,}".format(c.hearing_count) }}</td>
+                <td class="count-col">{{ "{:,}".format(c.witness_count) if c.witness_count else '&mdash;'|safe }}</td>
+                <td class="count-col">{{ "{:,}".format(c.with_transcript) if c.with_transcript else '&mdash;'|safe }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div style="margin-top:1.5rem">
+    <a href="/api/stats" class="btn btn-outline">API: Get Stats JSON</a>
+    <a href="/witnesses?format=csv" class="btn btn-outline" style="margin-left:0.5rem">Export All Witnesses (CSV)</a>
+</div>
+{% endblock %}

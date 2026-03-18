@@ -14,6 +14,7 @@
         <li>How many times has a particular person testified before Congress?</li>
         <li>Which witnesses appeared before the House Judiciary Committee this year?</li>
         <li>What hearings covered a specific topic?</li>
+        <li>Which organizations send the most witnesses to Congress?</li>
     </ul>
 </div>
 
@@ -21,39 +22,82 @@
     <h2>Data Sources</h2>
     <p>All data comes from official government APIs:</p>
     <ul>
-        <li><strong>Congress.gov Committee Meeting API</strong> &mdash; Structured witness data including names, titles, organizations, and links to written statements. This provides comprehensive witness data for House hearings from the 116th Congress onward.</li>
+        <li><strong>Congress.gov Committee Meeting API</strong> &mdash; Structured witness data including names, titles, organizations, and links to written statements, biographies, and truth-in-testimony disclosures. This provides comprehensive witness data for House hearings.</li>
         <li><strong>Congress.gov Hearing API</strong> &mdash; Hearing metadata and links to GovInfo transcripts.</li>
         <li><strong>GovInfo API</strong> &mdash; Full hearing transcripts in HTML and PDF formats.</li>
+    </ul>
+    <p>Data is refreshed periodically. Each witness has a stable unique ID (e.g., W-00001) for reliable cross-referencing.</p>
+</div>
+
+<div class="about-section">
+    <h2>Features</h2>
+    <ul>
+        <li><strong>Smart search:</strong> Search by witness name, hearing topic, title/position, organization, or agency abbreviation (e.g., FAA, FBI, EPA, SEC). The search engine automatically expands abbreviations to their full names.</li>
+        <li><strong>Title tracking:</strong> See who has held a given title (e.g., "Administrator") and when they testified in that capacity. Browse all tracked titles and positions.</li>
+        <li><strong>Document links:</strong> Direct links to written statements (PDFs), witness biographies, and truth-in-testimony disclosures hosted on Congress.gov.</li>
+        <li><strong>Committee pages:</strong> View each committee's hearing history, top witnesses, and filtering options.</li>
+        <li><strong>Statistics dashboard:</strong> Explore top organizations, most active committees, and repeat witnesses.</li>
+        <li><strong>CSV export:</strong> Download witness data as CSV for your own analysis.</li>
+        <li><strong>Direct links:</strong> Every hearing links to the original Congress.gov event page.</li>
+        <li><strong>JSON API:</strong> Programmatic access to all data for integration with other tools.</li>
     </ul>
 </div>
 
 <div class="about-section">
     <h2>Known Limitations</h2>
     <ul>
-        <li><strong>Senate witness data:</strong> The Congress.gov Committee Meeting API does not provide structured witness information for most Senate hearings. Senate hearings are listed, but witnesses may not be indexed unless the API provides them.</li>
+        <li><strong>Senate witness data:</strong> The Congress.gov Committee Meeting API does not provide structured witness information for most Senate hearings. Senate hearings are listed, but witnesses may not be indexed unless the API provides them. A future update will parse witness names from hearing transcripts to fill this gap.</li>
         <li><strong>117th Congress House data:</strong> The Congress.gov API currently returns an error for 117th Congress House committee meetings, so this data is unavailable.</li>
         <li><strong>Witness deduplication:</strong> The same person may appear under slightly different name variants. We use conservative matching to merge obvious duplicates (e.g., "Steve" and "Stephen" Dickson), but some edge cases may remain.</li>
-        <li><strong>Historical coverage:</strong> The database currently covers the 116th through 119th Congresses (January 2019 to present). Earlier hearings are not yet included.</li>
-    </ul>
-</div>
-
-<div class="about-section">
-    <h2>Features</h2>
-    <ul>
-        <li><strong>Smart search:</strong> Search by witness name, hearing topic, title/position, organization, or agency abbreviation (e.g., FAA, FBI, EPA, SEC).</li>
-        <li><strong>Title tracking:</strong> See who has held a given title (e.g., "Administrator") and when they testified in that capacity.</li>
-        <li><strong>CSV export:</strong> Download witness data as CSV for your own analysis.</li>
-        <li><strong>Direct links:</strong> Every hearing links to the original transcript on GovInfo and the meeting record on Congress.gov.</li>
-        <li><strong>Unique witness IDs:</strong> Each witness has a stable ID (e.g., W-00001) for reliable cross-referencing.</li>
+        <li><strong>Testimony text:</strong> Written statement PDFs are linked but their text content is not yet extracted into the database for full-text search. This is planned for a future update.</li>
+        <li><strong>Questions for the Record (QFRs):</strong> QFR extraction from hearing transcripts is not yet implemented. The database schema supports QFRs and they will be added in a future update.</li>
     </ul>
 </div>
 
 <div class="about-section">
     <h2>API Access</h2>
-    <p>This database provides a JSON API for programmatic access:</p>
-    <ul>
-        <li><code>/api/witnesses</code> &mdash; List witnesses (supports <code>?q=</code> search and <code>?limit=</code>)</li>
-        <li><code>/api/stats</code> &mdash; Database statistics</li>
-    </ul>
+    <p>This database provides a JSON API for programmatic access. All endpoints return JSON.</p>
+    <table class="data-table" style="margin-top:0.75rem">
+        <thead>
+            <tr>
+                <th>Endpoint</th>
+                <th>Description</th>
+                <th>Parameters</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code><a href="/api/stats">/api/stats</a></code></td>
+                <td>Database statistics overview</td>
+                <td>&mdash;</td>
+            </tr>
+            <tr>
+                <td><code><a href="/api/witnesses">/api/witnesses</a></code></td>
+                <td>List witnesses</td>
+                <td><code>q</code> (search), <code>limit</code> (max 500)</td>
+            </tr>
+            <tr>
+                <td><code>/api/witness/{id}</code></td>
+                <td>Full witness detail with titles and appearances</td>
+                <td>&mdash;</td>
+            </tr>
+            <tr>
+                <td><code>/api/hearing/{id}</code></td>
+                <td>Full hearing detail with witnesses and committees</td>
+                <td>&mdash;</td>
+            </tr>
+            <tr>
+                <td><code><a href="/api/search?q=FAA">/api/search</a></code></td>
+                <td>Search witnesses and hearings</td>
+                <td><code>q</code> (required), <code>limit</code> (max 100)</td>
+            </tr>
+        </tbody>
+    </table>
+    <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted)">Example: <code>/api/search?q=FAA+Administrator</code> returns witnesses and hearings matching "Federal Aviation Administration Administrator".</p>
+</div>
+
+<div class="about-section">
+    <h2>Open Source</h2>
+    <p>This project was built as a demonstration of AI-assisted legislative technology. The data is sourced entirely from publicly available government APIs and is freely available through the API endpoints above.</p>
 </div>
 {% endblock %}

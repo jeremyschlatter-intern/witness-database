@@ -36,7 +36,7 @@
             </td>
             <td>{{ t.organization or '—' }}</td>
             <td class="count-col"><span class="badge badge-count">{{ t.holder_count }}</span></td>
-            <td style="font-size:0.85rem; color:var(--text-light)">{{ t.holders|truncate(80) }}</td>
+            <td style="font-size:0.85rem; color:var(--text-light)">{{ t.holders|clean_name|truncate(80) }}</td>
         </tr>
         {% endfor %}
     </tbody>

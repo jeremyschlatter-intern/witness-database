@@ -101,10 +101,13 @@ def close_db(exception):
 
 
 def display_name(name):
-    """Clean up a witness name for display - strip 'The Honorable' prefix etc."""
+    """Clean up a witness name for display - strip honorific prefixes."""
     if not name:
         return name
-    name = re.sub(r'^The Honorable\s+', '', name)
+    name = re.sub(
+        r'^(The Honorable|Hon\.|Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Prof\.)\s+',
+        '', name, flags=re.IGNORECASE
+    )
     return name
 
 
@@ -151,6 +154,15 @@ def fts_query(q):
 @app.template_filter('clean_name')
 def clean_name_filter(name):
     return display_name(name)
+
+
+@app.template_filter('clean_text')
+def clean_text_filter(text):
+    """Remove carriage returns and collapse whitespace."""
+    if not text:
+        return text
+    text = re.sub(r'\r\n?|\n', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
 
 
 @app.template_filter('congress_ordinal')
@@ -847,6 +859,95 @@ def search():
                            expanded_query=expanded)
 
 
+@app.route("/statistics")
+def statistics():
+    db = get_connection()
+
+    # Overall stats
+    stats = {
+        "witnesses": db.execute("SELECT COUNT(*) FROM witnesses WHERE appearance_count > 0").fetchone()[0],
+        "hearings": db.execute("SELECT COUNT(*) FROM hearings").fetchone()[0],
+        "appearances": db.execute("SELECT COUNT(*) FROM witness_appearances").fetchone()[0],
+        "committees": db.execute("SELECT COUNT(*) FROM committees WHERE name != '' AND name IS NOT NULL").fetchone()[0],
+        "titles": db.execute("SELECT COUNT(*) FROM (SELECT title, organization FROM witness_titles GROUP BY title, organization)").fetchone()[0],
+        "has_statement": db.execute("SELECT COUNT(*) FROM witness_appearances WHERE statement_url IS NOT NULL AND statement_url != ''").fetchone()[0],
+        "has_bio": db.execute("SELECT COUNT(*) FROM witness_appearances WHERE biography_url IS NOT NULL AND biography_url != ''").fetchone()[0],
+    }
+
+    # Top organizations by number of witnesses
+    top_orgs = db.execute("""
+        SELECT organization, COUNT(DISTINCT witness_id) as witness_count,
+            COUNT(DISTINCT hearing_id) as hearing_count
+        FROM witness_appearances
+        WHERE organization IS NOT NULL AND organization != ''
+        GROUP BY organization
+        ORDER BY witness_count DESC
+        LIMIT 25
+    """).fetchall()
+
+    # Most active committees - prioritize those with witness data
+    top_committees = db.execute("""
+        SELECT c.id, c.name, c.chamber,
+            COUNT(DISTINCT hc.hearing_id) as hearing_count,
+            COUNT(DISTINCT wa.witness_id) as witness_count
+        FROM committees c
+        JOIN hearing_committees hc ON c.id = hc.committee_id
+        LEFT JOIN witness_appearances wa ON wa.hearing_id = hc.hearing_id
+        WHERE c.name != '' AND c.name IS NOT NULL
+        GROUP BY c.id
+        ORDER BY witness_count DESC, hearing_count DESC
+        LIMIT 20
+    """).fetchall()
+
+    # Repeat witnesses (appeared 3+ times)
+    repeat_witnesses = db.execute("""
+        SELECT w.id, w.name, w.appearance_count, w.first_appearance_date, w.last_appearance_date,
+            (SELECT GROUP_CONCAT(wt.title, '; ')
+             FROM (SELECT DISTINCT title FROM witness_titles WHERE witness_id = w.id) wt) as titles
+        FROM witnesses w
+        WHERE w.appearance_count >= 3
+        AND NOT EXISTS (
+            SELECT 1 FROM witness_titles wt
+            WHERE wt.witness_id = w.id
+            AND (wt.title LIKE '%Member of Congress%' OR wt.title LIKE '%Rep.%' OR wt.title LIKE '%Senator%')
+        )
+        ORDER BY w.appearance_count DESC
+        LIMIT 30
+    """).fetchall()
+
+    # Hearings by month (for the current congress data)
+    hearings_by_month = db.execute("""
+        SELECT substr(date, 1, 7) as month, chamber, COUNT(*) as cnt
+        FROM hearings
+        WHERE date IS NOT NULL AND date != ''
+        GROUP BY month, chamber
+        ORDER BY month DESC
+        LIMIT 60
+    """).fetchall()
+
+    # Coverage stats
+    coverage = db.execute("""
+        SELECT congress, chamber,
+            COUNT(*) as hearing_count,
+            SUM(CASE WHEN event_id IS NOT NULL THEN 1 ELSE 0 END) as with_event_id,
+            (SELECT COUNT(DISTINCT wa.witness_id) FROM witness_appearances wa
+             JOIN hearings h2 ON wa.hearing_id = h2.id
+             WHERE h2.congress = h.congress AND h2.chamber = h.chamber) as witness_count,
+            SUM(CASE WHEN govinfo_package_id IS NOT NULL THEN 1 ELSE 0 END) as with_transcript
+        FROM hearings h
+        GROUP BY congress, chamber
+        ORDER BY congress DESC, chamber
+    """).fetchall()
+
+    return render_template("statistics.html",
+                           stats=stats,
+                           top_orgs=top_orgs,
+                           top_committees=top_committees,
+                           repeat_witnesses=repeat_witnesses,
+                           hearings_by_month=hearings_by_month,
+                           coverage=coverage)
+
+
 @app.route("/about")
 def about():
     return render_template("about.html")
@@ -901,11 +1002,131 @@ def api_stats():
         "testimony": db.execute("SELECT COUNT(*) FROM testimony").fetchone()[0],
         "qfr": db.execute("SELECT COUNT(*) FROM questions_for_record").fetchone()[0],
         "committees": db.execute("SELECT COUNT(*) FROM committees WHERE name != ''").fetchone()[0],
+        "written_statements": db.execute("SELECT COUNT(*) FROM witness_appearances WHERE statement_url IS NOT NULL AND statement_url != ''").fetchone()[0],
         "congresses_covered": [r[0] for r in db.execute(
             "SELECT DISTINCT congress FROM hearings ORDER BY congress DESC"
         ).fetchall()],
     }
     return jsonify(stats)
+
+
+@app.route("/api/witness/<int:witness_id>")
+def api_witness_detail(witness_id):
+    db = get_connection()
+    witness = db.execute("SELECT * FROM witnesses WHERE id = ?", (witness_id,)).fetchone()
+    if not witness:
+        return jsonify({"error": "Witness not found"}), 404
+
+    result = dict(witness)
+    result["witness_id"] = f"W-{witness['id']:05d}"
+    result["display_name"] = display_name(witness["name"])
+
+    titles = db.execute(
+        "SELECT title, organization, start_date, end_date FROM witness_titles WHERE witness_id = ? ORDER BY start_date DESC",
+        (witness_id,)
+    ).fetchall()
+    result["titles"] = [dict(t) for t in titles]
+
+    appearances = db.execute("""
+        SELECT wa.id, wa.position, wa.organization, wa.statement_url, wa.biography_url,
+            h.id as hearing_id, h.title as hearing_title, h.date as hearing_date,
+            h.congress, h.chamber
+        FROM witness_appearances wa
+        JOIN hearings h ON wa.hearing_id = h.id
+        WHERE wa.witness_id = ?
+        ORDER BY h.date DESC
+    """, (witness_id,)).fetchall()
+    result["appearances"] = [dict(a) for a in appearances]
+
+    return jsonify(result)
+
+
+@app.route("/api/hearing/<int:hearing_id>")
+def api_hearing_detail(hearing_id):
+    db = get_connection()
+    hearing = db.execute("SELECT * FROM hearings WHERE id = ?", (hearing_id,)).fetchone()
+    if not hearing:
+        return jsonify({"error": "Hearing not found"}), 404
+
+    result = dict(hearing)
+
+    committees = db.execute("""
+        SELECT c.id, c.name, c.system_code, c.chamber
+        FROM committees c
+        JOIN hearing_committees hc ON c.id = hc.committee_id
+        WHERE hc.hearing_id = ?
+    """, (hearing_id,)).fetchall()
+    result["committees"] = [dict(c) for c in committees]
+
+    witnesses = db.execute("""
+        SELECT wa.id as appearance_id, wa.position, wa.organization,
+            wa.statement_url, wa.biography_url, wa.truth_in_testimony_url,
+            w.id as witness_id, w.name as witness_name
+        FROM witness_appearances wa
+        JOIN witnesses w ON wa.witness_id = w.id
+        WHERE wa.hearing_id = ?
+        ORDER BY w.last_name
+    """, (hearing_id,)).fetchall()
+    result["witnesses"] = [dict(w) for w in witnesses]
+
+    return jsonify(result)
+
+
+@app.route("/api/search")
+def api_search():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "Query parameter 'q' is required"}), 400
+
+    db = get_connection()
+    limit = min(request.args.get("limit", 25, type=int), 100)
+
+    expanded = expand_abbreviations(q)
+    fts_q = fts_query(q)
+
+    # Search witnesses
+    try:
+        witnesses = db.execute("""
+            SELECT w.id, w.name, w.appearance_count, w.first_appearance_date, w.last_appearance_date
+            FROM witnesses w
+            JOIN witnesses_fts ON witnesses_fts.rowid = w.id
+            WHERE witnesses_fts MATCH ?
+            ORDER BY w.appearance_count DESC
+            LIMIT ?
+        """, (fts_q, limit)).fetchall()
+    except Exception:
+        witnesses = db.execute("""
+            SELECT id, name, appearance_count, first_appearance_date, last_appearance_date
+            FROM witnesses WHERE name LIKE ?
+            ORDER BY appearance_count DESC
+            LIMIT ?
+        """, (f"%{q}%", limit)).fetchall()
+
+    # Search hearings
+    search_q = expanded if expanded else q
+    try:
+        hearings = db.execute("""
+            SELECT h.id, h.title, h.date, h.congress, h.chamber
+            FROM hearings h
+            JOIN hearings_fts ON hearings_fts.rowid = h.id
+            WHERE hearings_fts MATCH ?
+            ORDER BY h.date DESC
+            LIMIT ?
+        """, (fts_query(search_q), limit)).fetchall()
+    except Exception:
+        hearings = db.execute("""
+            SELECT id, title, date, congress, chamber
+            FROM hearings WHERE title LIKE ?
+            ORDER BY date DESC
+            LIMIT ?
+        """, (f"%{search_q}%", limit)).fetchall()
+
+    return jsonify({
+        "query": q,
+        "expanded_query": expanded,
+        "witnesses": [dict(w) for w in witnesses],
+        "hearings": [dict(h) for h in hearings],
+    })
 
 
 if __name__ == "__main__":

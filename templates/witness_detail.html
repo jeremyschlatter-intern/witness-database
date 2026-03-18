@@ -94,4 +94,15 @@
     <p>No hearing appearances recorded yet.</p>
 </div>
 {% endif %}
+
+{% if appearances|length > 0 %}
+<div style="margin-top:1.5rem; padding:1rem; background:var(--bg); border-radius:8px; font-size:0.85rem; color:var(--text-muted)">
+    <strong>Document summary:</strong>
+    {% set stmt_count = appearances|selectattr('statement_url')|list|length %}
+    {% set bio_count = appearances|selectattr('biography_url')|list|length %}
+    {{ stmt_count }} written statement{{ 's' if stmt_count != 1 }} available,
+    {{ bio_count }} biograph{{ 'ies' if bio_count != 1 else 'y' }} available.
+    All documents link to official Congress.gov PDFs.
+</div>
+{% endif %}
 {% endblock %}

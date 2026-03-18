@@ -16,7 +16,7 @@
     <select name="congress">
         <option value="">All Congresses</option>
         {% for c in congresses %}
-        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress }}th Congress</option>
+        <option value="{{ c.congress }}" {% if congress|string == c.congress|string %}selected{% endif %}>{{ c.congress|congress_ordinal }} Congress</option>
         {% endfor %}
     </select>
     <select name="sort">
