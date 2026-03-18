@@ -25,9 +25,9 @@ CONGRESS_API_KEY = "CONGRESS_API_KEY"
 CONGRESS_API_BASE = "https://api.congress.gov/v3"
 GOVINFO_API_BASE = "https://api.govinfo.gov"
 
-# Rate limiting
-CONGRESS_DELAY = 0.15  # seconds between congress.gov requests
-GOVINFO_DELAY = 0.2   # seconds between govinfo requests
+# Rate limiting - 20,000 requests/day = ~14/sec max
+CONGRESS_DELAY = 0.08  # seconds between congress.gov requests
+GOVINFO_DELAY = 0.1   # seconds between govinfo requests
 
 
 def normalize_name(name):

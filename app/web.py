@@ -61,7 +61,7 @@ def index():
     # Top witnesses by appearances
     top_witnesses = db.execute("""
         SELECT w.*,
-            (SELECT GROUP_CONCAT(DISTINCT wt.title, '; ')
+            (SELECT GROUP_CONCAT( wt.title, '; ')
              FROM witness_titles wt WHERE wt.witness_id = w.id LIMIT 3) as titles
         FROM witnesses w
         WHERE w.appearance_count > 0
@@ -107,7 +107,7 @@ def witnesses_list():
 
         witnesses = db.execute("""
             SELECT w.*,
-                (SELECT GROUP_CONCAT(DISTINCT wt.title, '; ')
+                (SELECT GROUP_CONCAT( wt.title, '; ')
                  FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
             FROM witnesses w
             JOIN witnesses_fts ON witnesses_fts.rowid = w.id
@@ -147,7 +147,7 @@ def witnesses_list():
 
         witnesses = db.execute(f"""
             SELECT w.*,
-                (SELECT GROUP_CONCAT(DISTINCT wt.title, '; ')
+                (SELECT GROUP_CONCAT( wt.title, '; ')
                  FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
             FROM witnesses w
             WHERE {where}
@@ -197,6 +197,7 @@ def witness_detail(witness_id):
         JOIN hearings h ON wa.hearing_id = h.id
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
         LEFT JOIN committees c ON hc.committee_id = c.id
+        WHERE wa.witness_id = ?
         GROUP BY wa.id
         ORDER BY h.date DESC
     """, (witness_id,)).fetchall()
@@ -249,7 +250,7 @@ def hearings_list():
 
     hearings = db.execute(f"""
         SELECT h.*,
-            GROUP_CONCAT(DISTINCT c.name) as committee_names,
+            GROUP_CONCAT( c.name) as committee_names,
             (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
         FROM hearings h
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
@@ -289,7 +290,7 @@ def hearing_detail(hearing_id):
 
     hearing = db.execute("""
         SELECT h.*,
-            GROUP_CONCAT(DISTINCT c.name) as committee_names
+            GROUP_CONCAT( c.name) as committee_names
         FROM hearings h
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
         LEFT JOIN committees c ON hc.committee_id = c.id
@@ -357,7 +358,7 @@ def titles_list():
         titles = db.execute("""
             SELECT wt.title, wt.organization,
                 COUNT(DISTINCT wt.witness_id) as holder_count,
-                GROUP_CONCAT(DISTINCT w.name) as holders
+                GROUP_CONCAT( w.name) as holders
             FROM witness_titles wt
             JOIN witnesses w ON wt.witness_id = w.id
             WHERE wt.title LIKE ? OR wt.organization LIKE ?
@@ -375,7 +376,7 @@ def titles_list():
         titles = db.execute("""
             SELECT wt.title, wt.organization,
                 COUNT(DISTINCT wt.witness_id) as holder_count,
-                GROUP_CONCAT(DISTINCT w.name) as holders
+                GROUP_CONCAT( w.name) as holders
             FROM witness_titles wt
             JOIN witnesses w ON wt.witness_id = w.id
             GROUP BY wt.title, wt.organization
@@ -466,7 +467,7 @@ def search():
     # Search hearings
     hearing_results = db.execute("""
         SELECT h.*, 'hearing' as result_type,
-            GROUP_CONCAT(DISTINCT c.name) as committee_names
+            GROUP_CONCAT( c.name) as committee_names
         FROM hearings h
         JOIN hearings_fts ON hearings_fts.rowid = h.id
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
