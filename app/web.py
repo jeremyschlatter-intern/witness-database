@@ -101,11 +101,14 @@ def close_db(exception):
 
 
 def display_name(name):
-    """Clean up a witness name for display - strip honorific prefixes."""
+    """Clean up a witness name for display - strip honorific and military prefixes."""
     if not name:
         return name
     name = re.sub(
-        r'^(The Honorable|Hon\.|Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Prof\.)\s+',
+        r'^(The Honorable|Hon\.|Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Prof\.|'
+        r'Rear Admiral|Vice Admiral|Admiral|General|Colonel|Major General|'
+        r'Brigadier General|Lieutenant General|Lieutenant Colonel|'
+        r'Major|Captain|Lieutenant|Sergeant|Ambassador|Commissioner)\s+',
         '', name, flags=re.IGNORECASE
     )
     return name
@@ -123,20 +126,28 @@ def is_member_of_congress(titles_str):
 
 
 def expand_abbreviations(q):
-    """Expand known abbreviations in a search query."""
+    """Expand known abbreviations in a search query.
+    Returns (expanded_string, org_expansion, remaining_words) or (None, None, None).
+    org_expansion is the full org name from abbreviation.
+    remaining_words are the non-abbreviation words from the original query.
+    """
     words = q.split()
     expanded_words = []
+    org_expansion = None
+    remaining_words = []
     has_expansion = False
     for word in words:
         upper = word.upper()
         if upper in ABBREVIATIONS:
             expanded_words.append(ABBREVIATIONS[upper])
+            org_expansion = ABBREVIATIONS[upper]
             has_expansion = True
         else:
             expanded_words.append(word)
+            remaining_words.append(word)
     if has_expansion:
-        return ' '.join(expanded_words)
-    return None
+        return ' '.join(expanded_words), org_expansion, remaining_words
+    return None, None, None
 
 
 def fts_query(q):
@@ -731,7 +742,7 @@ def search():
     db = get_connection()
 
     # Expand abbreviations (e.g., "FAA" -> "Federal Aviation Administration")
-    expanded = expand_abbreviations(q)
+    expanded, org_expansion, remaining_words = expand_abbreviations(q)
     search_queries = [q]
     if expanded:
         search_queries.append(expanded)
@@ -799,57 +810,104 @@ def search():
             break
 
     # Search titles and organizations
-    # Try original query AND expanded abbreviations
+    # When we have an abbreviation expansion (e.g., FAA -> "Federal Aviation Administration"),
+    # search org as a phrase and remaining words against title for precision
     title_results = []
-    for sq in search_queries:
-        words = [w for w in sq.split() if len(w) > 1]
-        combined_field = "(wt.title || ' ' || COALESCE(wt.organization, ''))"
-        if words:
-            word_clauses = []
-            word_params = []
-            for word in words:
-                word_clauses.append(f"{combined_field} LIKE ?")
-                word_params.append(f"%{word}%")
+    if org_expansion and remaining_words:
+        # Smart search: match org phrase + remaining words in title
+        org_clause = "COALESCE(wt.organization, '') LIKE ?"
+        org_param = f"%{org_expansion}%"
+        title_clauses = [f"wt.title LIKE ?" for w in remaining_words]
+        title_params = [f"%{w}%" for w in remaining_words]
 
-            title_results = db.execute(f"""
-                SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+        title_results = db.execute(f"""
+            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                w.appearance_count, 'title' as result_type
+            FROM witness_titles wt
+            JOIN witnesses w ON wt.witness_id = w.id
+            WHERE {org_clause} AND ({' AND '.join(title_clauses)})
+            ORDER BY w.appearance_count DESC
+            LIMIT 25
+        """, [org_param] + title_params).fetchall()
+
+        # Also check witness_appearances table for org+position matches
+        if not title_results or len(title_results) < 10:
+            pos_clauses = [f"wa.position LIKE ?" for w in remaining_words]
+            pos_params = [f"%{w}%" for w in remaining_words]
+            extra = db.execute(f"""
+                SELECT wa.position as title, wa.organization, w.name, w.id as witness_id,
                     w.appearance_count, 'title' as result_type
-                FROM witness_titles wt
-                JOIN witnesses w ON wt.witness_id = w.id
-                WHERE {' AND '.join(word_clauses)}
+                FROM witness_appearances wa
+                JOIN witnesses w ON wa.witness_id = w.id
+                WHERE COALESCE(wa.organization, '') LIKE ? AND ({' AND '.join(pos_clauses)})
+                GROUP BY w.id, wa.position, wa.organization
                 ORDER BY w.appearance_count DESC
                 LIMIT 25
-            """, word_params).fetchall()
+            """, [org_param] + pos_params).fetchall()
+            existing_ids = {t['witness_id'] for t in title_results}
+            for row in extra:
+                if row['witness_id'] not in existing_ids:
+                    title_results.append(row)
+                    existing_ids.add(row['witness_id'])
 
-            if not title_results:
-                any_clauses = []
-                any_params = []
-                for word in words:
-                    any_clauses.append(f"{combined_field} LIKE ?")
-                    any_params.append(f"%{word}%")
+    # Fall back to generic word-based search if no abbreviation or no results
+    if not title_results:
+        for sq in search_queries:
+            words = [w for w in sq.split() if len(w) > 1]
+            combined_field = "(wt.title || ' ' || COALESCE(wt.organization, ''))"
+            if words:
+                # Try AND first (all words must match)
+                word_clauses = [f"{combined_field} LIKE ?" for word in words]
+                word_params = [f"%{word}%" for word in words]
+
                 title_results = db.execute(f"""
                     SELECT wt.title, wt.organization, w.name, w.id as witness_id,
                         w.appearance_count, 'title' as result_type
                     FROM witness_titles wt
                     JOIN witnesses w ON wt.witness_id = w.id
-                    WHERE {' OR '.join(any_clauses)}
+                    WHERE {' AND '.join(word_clauses)}
                     ORDER BY w.appearance_count DESC
                     LIMIT 25
-                """, any_params).fetchall()
-        else:
-            sq_like = f"%{sq}%"
-            title_results = db.execute("""
-                SELECT wt.title, wt.organization, w.name, w.id as witness_id,
-                    w.appearance_count, 'title' as result_type
-                FROM witness_titles wt
-                JOIN witnesses w ON wt.witness_id = w.id
-                WHERE wt.title LIKE ? OR wt.organization LIKE ?
-                ORDER BY w.appearance_count DESC
-                LIMIT 25
-            """, (sq_like, sq_like)).fetchall()
+                """, word_params).fetchall()
 
-        if title_results:
-            break
+                # Fall back to OR if AND yields nothing
+                if not title_results:
+                    or_clauses = [f"{combined_field} LIKE ?" for word in words]
+                    or_params = [f"%{word}%" for word in words]
+                    title_results = db.execute(f"""
+                        SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                            w.appearance_count, 'title' as result_type
+                        FROM witness_titles wt
+                        JOIN witnesses w ON wt.witness_id = w.id
+                        WHERE {' OR '.join(or_clauses)}
+                        ORDER BY w.appearance_count DESC
+                        LIMIT 25
+                    """, or_params).fetchall()
+            else:
+                sq_like = f"%{sq}%"
+                title_results = db.execute("""
+                    SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                        w.appearance_count, 'title' as result_type
+                    FROM witness_titles wt
+                    JOIN witnesses w ON wt.witness_id = w.id
+                    WHERE wt.title LIKE ? OR wt.organization LIKE ?
+                    ORDER BY w.appearance_count DESC
+                    LIMIT 25
+                """, (sq_like, sq_like)).fetchall()
+
+            if title_results:
+                break
+
+    # Deduplicate title results - keep the best title match per witness
+    if title_results:
+        seen = {}
+        deduped = []
+        for t in title_results:
+            wid = t['witness_id']
+            if wid not in seen:
+                seen[wid] = True
+                deduped.append(t)
+        title_results = deduped
 
     return render_template("search.html",
                            q=q,
@@ -902,8 +960,9 @@ def statistics():
     # Repeat witnesses (appeared 3+ times)
     repeat_witnesses = db.execute("""
         SELECT w.id, w.name, w.appearance_count, w.first_appearance_date, w.last_appearance_date,
-            (SELECT GROUP_CONCAT(wt.title, '; ')
-             FROM (SELECT DISTINCT title FROM witness_titles WHERE witness_id = w.id) wt) as titles
+            (SELECT GROUP_CONCAT(wt.title || CASE WHEN wt.organization IS NOT NULL AND wt.organization != ''
+                THEN ', ' || wt.organization ELSE '' END, '; ')
+             FROM (SELECT DISTINCT title, organization FROM witness_titles WHERE witness_id = w.id LIMIT 3) wt) as titles
         FROM witnesses w
         WHERE w.appearance_count >= 3
         AND NOT EXISTS (
@@ -1081,7 +1140,7 @@ def api_search():
     db = get_connection()
     limit = min(request.args.get("limit", 25, type=int), 100)
 
-    expanded = expand_abbreviations(q)
+    expanded, _, _ = expand_abbreviations(q)
     fts_q = fts_query(q)
 
     # Search witnesses

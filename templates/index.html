@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Congressional Witness Database</h1>
-    <p class="subtitle">A searchable database of witnesses who have testified before House and Senate committees, covering the 116th through 119th Congress (2019&ndash;present).</p>
+    <p class="subtitle">A searchable database of witnesses who have testified before House and Senate committees{% if congress_stats %}{% if congress_stats[-1].congress != congress_stats[0].congress %}, covering the {{ congress_stats[-1].congress|congress_ordinal }} through {{ congress_stats[0].congress|congress_ordinal }} Congress{% else %}, covering the {{ congress_stats[0].congress|congress_ordinal }} Congress{% endif %}{% endif %}.</p>
 </div>
 
 <div class="stats-grid">
