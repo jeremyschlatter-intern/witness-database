@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ witness.name }} - Congressional Witness Database{% endblock %}
+{% block title %}{{ witness.name|clean_name }} - Congressional Witness Database{% endblock %}
 {% block content %}
 <div class="detail-header">
-    <h1>{{ witness.name }}</h1>
+    <h1>{{ witness.name|clean_name }}</h1>
     <div class="detail-meta">
         <div class="meta-item">
             <span class="meta-label">Appearances:</span>
@@ -73,7 +73,7 @@
         <a href="/hearing/{{ a.hearing_id }}/testimony/{{ a.id }}">View Testimony</a>
         {% endif %}
         {% if a.qfr_count > 0 %}
-        <a href="/hearing/{{ a.hearing_id }}/testimony/{{ a.id }}#qfr">Questions for the Record ({{ a.qfr_count }})</a>
+        <a href="/hearing/{{ a.hearing_id }}/testimony/{{ a.id }}#qfr">QFR ({{ a.qfr_count }})</a>
         {% endif %}
         {% if a.statement_url %}
         <a href="{{ a.statement_url }}" target="_blank">Written Statement (PDF)</a>

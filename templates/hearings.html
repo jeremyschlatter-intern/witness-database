@@ -26,9 +26,21 @@
         {% endfor %}
     </select>
     <button type="submit" class="btn btn-primary">Filter</button>
-    {% if q or chamber or congress or committee %}
+    {% if q or chamber or congress or committee or date_from or date_to %}
     <a href="/hearings" class="btn btn-outline">Clear</a>
     {% endif %}
+</form>
+<div class="filter-bar" style="margin-top:-0.5rem">
+    <label style="font-size:0.85rem; color:var(--text-muted)">Date range:</label>
+    <input type="date" name="date_from" value="{{ date_from }}" form="date-form" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
+    <span style="color:var(--text-muted)">to</span>
+    <input type="date" name="date_to" value="{{ date_to }}" form="date-form" style="padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.85rem">
+</div>
+<form id="date-form" method="GET" action="/hearings" style="display:none">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="chamber" value="{{ chamber }}">
+    <input type="hidden" name="congress" value="{{ congress }}">
+    <input type="hidden" name="committee" value="{{ committee }}">
 </form>
 
 <div class="results-info">
@@ -51,13 +63,13 @@
         {% for h in hearings %}
         <tr>
             <td class="name-col"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(80) }}</a></td>
-            <td style="font-size:0.85rem">{{ (h.committee_names or '—')|truncate(45) }}</td>
+            <td style="font-size:0.85rem">{{ (h.committee_names or '')|truncate(45) }}</td>
             <td><span class="badge {% if h.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ h.chamber }}</span></td>
-            <td class="date-col">{{ h.date or '—' }}</td>
+            <td class="date-col">{{ h.date or '' }}</td>
             <td class="count-col">
                 {% if h.witness_count %}
                 <span class="badge badge-count">{{ h.witness_count }}</span>
-                {% else %}—{% endif %}
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -73,19 +85,19 @@
 {% if total_pages > 1 %}
 <div class="pagination">
     {% if page > 1 %}
-    <a href="?page={{ page - 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">&laquo; Previous</a>
+    <a href="?page={{ page - 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}&date_from={{ date_from }}&date_to={{ date_to }}">&laquo; Prev</a>
     {% endif %}
     {% for p in range(1, total_pages + 1) %}
         {% if p == page %}
         <span class="current">{{ p }}</span>
         {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
-        <a href="?page={{ p }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">{{ p }}</a>
+        <a href="?page={{ p }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ p }}</a>
         {% elif p == 4 or p == total_pages - 3 %}
         <span class="disabled">...</span>
         {% endif %}
     {% endfor %}
     {% if page < total_pages %}
-    <a href="?page={{ page + 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}">Next &raquo;</a>
+    <a href="?page={{ page + 1 }}&q={{ q }}&chamber={{ chamber }}&congress={{ congress }}&committee={{ committee }}&date_from={{ date_from }}&date_to={{ date_to }}">Next &raquo;</a>
     {% endif %}
 </div>
 {% endif %}

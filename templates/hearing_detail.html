@@ -62,7 +62,7 @@
     <tbody>
         {% for w in witnesses %}
         <tr>
-            <td class="name-col"><a href="/witness/{{ w.witness_id }}">{{ w.witness_name }}</a></td>
+            <td class="name-col"><a href="/witness/{{ w.witness_id }}">{{ w.witness_name|clean_name }}</a></td>
             <td>{{ w.position or '—' }}</td>
             <td>{{ w.organization or '—' }}</td>
             <td>

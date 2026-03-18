@@ -518,6 +518,18 @@ main {
     margin-top: 0.15rem;
 }
 
+/* Coverage note */
+.coverage-note {
+    background: #fffff0;
+    border: 1px solid #fefcbf;
+    border-left: 4px solid #d69e2e;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    color: #744210;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;

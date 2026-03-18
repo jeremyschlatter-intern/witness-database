@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Congressional Witness Database</h1>
-    <p class="subtitle">A searchable database of witnesses who have testified before House and Senate committees</p>
+    <p class="subtitle">A searchable database of witnesses who have testified before House and Senate committees, covering the 116th through 119th Congress (2019&ndash;present).</p>
 </div>
 
 <div class="stats-grid">
@@ -21,24 +21,28 @@
     </div>
 </div>
 
+<div class="coverage-note">
+    <strong>Data coverage:</strong> Structured witness data is sourced from the Congress.gov Committee Meeting API. House hearings have comprehensive witness records; Senate witness data is available for hearings where the API provides it. The 117th Congress House data is currently unavailable due to an upstream API issue.
+</div>
+
 <div class="two-col">
     <div>
-        <h2 class="section-title">Most Frequent Witnesses</h2>
+        <h2 class="section-title">Most Frequent Witnesses (Non-Members)</h2>
         <table class="data-table">
             <thead>
                 <tr>
                     <th>Witness</th>
-                    <th>Recent Title</th>
+                    <th>Title / Position</th>
                     <th class="count-col">Appearances</th>
                 </tr>
             </thead>
             <tbody>
                 {% for w in top_witnesses %}
                 <tr>
-                    <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name }}</a></td>
+                    <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></td>
                     <td>
                         {% if w.titles %}
-                            <span class="text-muted">{{ w.titles.split(';')[0]|truncate(50) }}</span>
+                            <span style="color:var(--text-light); font-size:0.85rem">{{ w.titles.split(';')[0]|truncate(50) }}</span>
                         {% endif %}
                     </td>
                     <td class="count-col"><span class="badge badge-count">{{ w.appearance_count }}</span></td>
@@ -46,7 +50,30 @@
                 {% endfor %}
             </tbody>
         </table>
-        <a href="/witnesses?sort=appearances" class="btn btn-outline" style="margin-top:0.75rem">View all witnesses &rarr;</a>
+        <div style="margin-top:0.75rem">
+            <a href="/witnesses?sort=appearances" class="btn btn-outline">View all witnesses &rarr;</a>
+            <a href="/witnesses?sort=appearances&format=csv" class="btn btn-outline" style="margin-left:0.5rem">Export CSV</a>
+        </div>
+
+        {% if top_moc_witnesses %}
+        <h2 class="section-title" style="margin-top:1.5rem">Members of Congress as Witnesses</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Member</th>
+                    <th class="count-col">Appearances</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for w in top_moc_witnesses %}
+                <tr>
+                    <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></td>
+                    <td class="count-col"><span class="badge badge-count">{{ w.appearance_count }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
     </div>
 
     <div>
@@ -60,6 +87,7 @@
             <div style="font-size:0.85rem; color:var(--text-muted)">
                 {% if h.date %}{{ h.date }}{% endif %}
                 {% if h.committee_names %} &middot; {{ h.committee_names|truncate(60) }}{% endif %}
+                {% if h.witness_count %} &middot; {{ h.witness_count }} witness{{ 'es' if h.witness_count != 1 }}{% endif %}
             </div>
         </div>
         {% endfor %}
@@ -77,6 +105,7 @@
                 <th>Chamber</th>
                 <th class="count-col">Hearings</th>
                 <th class="count-col">Witnesses</th>
+                <th>Notes</th>
             </tr>
         </thead>
         <tbody>
@@ -85,7 +114,14 @@
                 <td><a href="/hearings?congress={{ s.congress }}">{{ s.congress }}th Congress</a></td>
                 <td><span class="badge {% if s.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ s.chamber }}</span></td>
                 <td class="count-col">{{ "{:,}".format(s.hearing_count) }}</td>
-                <td class="count-col">{{ "{:,}".format(s.witness_count) if s.witness_count else '—' }}</td>
+                <td class="count-col">{{ "{:,}".format(s.witness_count) if s.witness_count else '&mdash;'|safe }}</td>
+                <td style="font-size:0.8rem; color:var(--text-muted)">
+                    {% if s.chamber == 'Senate' and s.witness_count == 0 %}
+                        Senate API does not provide structured witness data
+                    {% elif s.congress == 117 and s.chamber == 'House' %}
+                        API temporarily unavailable
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>

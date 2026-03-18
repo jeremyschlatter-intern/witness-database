@@ -1,10 +1,13 @@
 """Flask web application for the Congressional Witness Database."""
 
+import csv
+import io
 import math
 import os
+import re
 import sys
 
-from flask import Flask, render_template, request, jsonify, g
+from flask import Flask, render_template, request, jsonify, g, Response
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.database import get_db, init_db
@@ -31,12 +34,50 @@ def close_db(exception):
         db.close()
 
 
+def display_name(name):
+    """Clean up a witness name for display - strip 'The Honorable' prefix etc."""
+    if not name:
+        return name
+    name = re.sub(r'^The Honorable\s+', '', name)
+    return name
+
+
+def is_member_of_congress(titles_str):
+    """Check if a witness is a Member of Congress based on their titles."""
+    if not titles_str:
+        return False
+    moc_indicators = ['member of congress', 'congressman', 'congresswoman',
+                      'representative', 'senator', 'ranking member', 'chairman, committee',
+                      'chairwoman, committee', 'chair, committee']
+    lower = titles_str.lower()
+    return any(ind in lower for ind in moc_indicators)
+
+
+def fts_query(q):
+    """Convert a user search query into an FTS5 query."""
+    # If it looks like a phrase (multiple words), wrap in quotes
+    q = q.strip()
+    if not q:
+        return q
+    # Escape special FTS characters
+    q = q.replace('"', '')
+    words = q.split()
+    if len(words) > 1:
+        # Try phrase match with OR fallback to individual terms
+        return f'"{q}" OR ({" ".join(words)})'
+    return q
+
+
+@app.template_filter('clean_name')
+def clean_name_filter(name):
+    return display_name(name)
+
+
 @app.context_processor
 def inject_stats():
-    """Inject global stats into all templates."""
     db = get_connection()
     return {
-        "total_witnesses": db.execute("SELECT COUNT(*) FROM witnesses").fetchone()[0],
+        "total_witnesses": db.execute("SELECT COUNT(*) FROM witnesses WHERE appearance_count > 0").fetchone()[0],
         "total_hearings": db.execute("SELECT COUNT(*) FROM hearings").fetchone()[0],
         "total_appearances": db.execute("SELECT COUNT(*) FROM witness_appearances").fetchone()[0],
     }
@@ -46,9 +87,9 @@ def inject_stats():
 def index():
     db = get_connection()
 
-    # Recent hearings
     recent_hearings = db.execute("""
-        SELECT h.*, GROUP_CONCAT(c.name, '; ') as committee_names
+        SELECT h.*, GROUP_CONCAT(c.name, '; ') as committee_names,
+            (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
         FROM hearings h
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
         LEFT JOIN committees c ON hc.committee_id = c.id
@@ -58,23 +99,49 @@ def index():
         LIMIT 10
     """).fetchall()
 
-    # Top witnesses by appearances
+    # Top NON-member witnesses (exclude Members of Congress)
     top_witnesses = db.execute("""
         SELECT w.*,
-            (SELECT GROUP_CONCAT( wt.title, '; ')
-             FROM witness_titles wt WHERE wt.witness_id = w.id LIMIT 3) as titles
+            (SELECT GROUP_CONCAT(wt.title, '; ')
+             FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
         FROM witnesses w
         WHERE w.appearance_count > 0
+        AND NOT EXISTS (
+            SELECT 1 FROM witness_titles wt
+            WHERE wt.witness_id = w.id
+            AND (wt.title LIKE '%Member of Congress%'
+                 OR wt.title LIKE '%Rep.%'
+                 OR wt.title LIKE '%Senator%')
+        )
         ORDER BY w.appearance_count DESC
         LIMIT 15
     """).fetchall()
 
-    # Stats by congress
+    # Top Members of Congress who testify
+    top_moc_witnesses = db.execute("""
+        SELECT w.*,
+            (SELECT GROUP_CONCAT(wt.title, '; ')
+             FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+        FROM witnesses w
+        WHERE w.appearance_count > 0
+        AND EXISTS (
+            SELECT 1 FROM witness_titles wt
+            WHERE wt.witness_id = w.id
+            AND (wt.title LIKE '%Member of Congress%'
+                 OR wt.title LIKE '%Rep.%')
+        )
+        ORDER BY w.appearance_count DESC
+        LIMIT 10
+    """).fetchall()
+
     congress_stats = db.execute("""
         SELECT congress, chamber, COUNT(*) as hearing_count,
-            COUNT(DISTINCT wa.witness_id) as witness_count
+            (SELECT COUNT(DISTINCT wa2.witness_id)
+             FROM witness_appearances wa2
+             JOIN hearings h2 ON wa2.hearing_id = h2.id
+             WHERE h2.congress = h.congress AND h2.chamber = h.chamber
+            ) as witness_count
         FROM hearings h
-        LEFT JOIN witness_appearances wa ON h.id = wa.hearing_id
         GROUP BY congress, chamber
         ORDER BY congress DESC, chamber
     """).fetchall()
@@ -82,6 +149,7 @@ def index():
     return render_template("index.html",
                            recent_hearings=recent_hearings,
                            top_witnesses=top_witnesses,
+                           top_moc_witnesses=top_moc_witnesses,
                            congress_stats=congress_stats)
 
 
@@ -93,28 +161,44 @@ def witnesses_list():
     q = request.args.get("q", "").strip()
     chamber = request.args.get("chamber", "")
     congress = request.args.get("congress", "", type=str)
+    fmt = request.args.get("format", "")
 
     offset = (page - 1) * PER_PAGE
 
     if q:
-        # Full-text search
-        count = db.execute("""
-            SELECT COUNT(DISTINCT w.id)
-            FROM witnesses w
-            JOIN witnesses_fts ON witnesses_fts.rowid = w.id
-            WHERE witnesses_fts MATCH ?
-        """, (q,)).fetchone()[0]
+        fts_q = fts_query(q)
+        try:
+            count = db.execute("""
+                SELECT COUNT(DISTINCT w.id)
+                FROM witnesses w
+                JOIN witnesses_fts ON witnesses_fts.rowid = w.id
+                WHERE witnesses_fts MATCH ?
+            """, (fts_q,)).fetchone()[0]
 
-        witnesses = db.execute("""
-            SELECT w.*,
-                (SELECT GROUP_CONCAT( wt.title, '; ')
-                 FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
-            FROM witnesses w
-            JOIN witnesses_fts ON witnesses_fts.rowid = w.id
-            WHERE witnesses_fts MATCH ?
-            ORDER BY rank
-            LIMIT ? OFFSET ?
-        """, (q, PER_PAGE, offset)).fetchall()
+            witnesses = db.execute("""
+                SELECT w.*,
+                    (SELECT GROUP_CONCAT(wt.title, '; ')
+                     FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+                FROM witnesses w
+                JOIN witnesses_fts ON witnesses_fts.rowid = w.id
+                WHERE witnesses_fts MATCH ?
+                ORDER BY w.appearance_count DESC
+                LIMIT ? OFFSET ?
+            """, (fts_q, PER_PAGE, offset)).fetchall()
+        except Exception:
+            # Fallback to LIKE search if FTS fails
+            like_q = f"%{q}%"
+            count = db.execute(
+                "SELECT COUNT(*) FROM witnesses WHERE name LIKE ?", (like_q,)
+            ).fetchone()[0]
+            witnesses = db.execute("""
+                SELECT w.*,
+                    (SELECT GROUP_CONCAT(wt.title, '; ')
+                     FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+                FROM witnesses w WHERE w.name LIKE ?
+                ORDER BY w.appearance_count DESC
+                LIMIT ? OFFSET ?
+            """, (like_q, PER_PAGE, offset)).fetchall()
     else:
         where_clauses = ["w.appearance_count > 0"]
         params = []
@@ -136,7 +220,6 @@ def witnesses_list():
             params.append(int(congress))
 
         where = " AND ".join(where_clauses)
-
         count = db.execute(f"SELECT COUNT(*) FROM witnesses w WHERE {where}", params).fetchone()[0]
 
         order = {
@@ -145,9 +228,21 @@ def witnesses_list():
             "recent": "w.last_appearance_date DESC",
         }.get(sort, "w.appearance_count DESC")
 
+        if fmt == "csv":
+            # Export all matching records
+            witnesses = db.execute(f"""
+                SELECT w.*,
+                    (SELECT GROUP_CONCAT(wt.title, '; ')
+                     FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+                FROM witnesses w
+                WHERE {where}
+                ORDER BY {order}
+            """, params).fetchall()
+            return export_witnesses_csv(witnesses)
+
         witnesses = db.execute(f"""
             SELECT w.*,
-                (SELECT GROUP_CONCAT( wt.title, '; ')
+                (SELECT GROUP_CONCAT(wt.title, '; ')
                  FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
             FROM witnesses w
             WHERE {where}
@@ -155,9 +250,8 @@ def witnesses_list():
             LIMIT ? OFFSET ?
         """, params + [PER_PAGE, offset]).fetchall()
 
-    total_pages = math.ceil(count / PER_PAGE)
+    total_pages = math.ceil(count / PER_PAGE) if count else 0
 
-    # Get distinct congresses for filter
     congresses = db.execute(
         "SELECT DISTINCT congress FROM hearings ORDER BY congress DESC"
     ).fetchall()
@@ -172,6 +266,27 @@ def witnesses_list():
                            chamber=chamber,
                            congress=congress,
                            congresses=congresses)
+
+
+def export_witnesses_csv(witnesses):
+    """Export witnesses to CSV."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Name", "Appearances", "First Appearance", "Last Appearance", "Titles"])
+    for w in witnesses:
+        writer.writerow([
+            f"W-{w['id']:05d}",
+            display_name(w['name']),
+            w['appearance_count'],
+            w['first_appearance_date'] or '',
+            w['last_appearance_date'] or '',
+            w['titles'] or '',
+        ])
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=witnesses.csv"}
+    )
 
 
 @app.route("/witness/<int:witness_id>")
@@ -216,6 +331,8 @@ def hearings_list():
     chamber = request.args.get("chamber", "")
     congress = request.args.get("congress", "", type=str)
     committee = request.args.get("committee", "")
+    date_from = request.args.get("date_from", "")
+    date_to = request.args.get("date_to", "")
 
     offset = (page - 1) * PER_PAGE
 
@@ -223,10 +340,13 @@ def hearings_list():
     params = []
 
     if q:
-        where_clauses.append("""
-            h.id IN (SELECT rowid FROM hearings_fts WHERE hearings_fts MATCH ?)
-        """)
-        params.append(q)
+        fts_q = fts_query(q)
+        try:
+            where_clauses.append("h.id IN (SELECT rowid FROM hearings_fts WHERE hearings_fts MATCH ?)")
+            params.append(fts_q)
+        except Exception:
+            where_clauses.append("h.title LIKE ?")
+            params.append(f"%{q}%")
 
     if chamber:
         where_clauses.append("h.chamber = ?")
@@ -239,18 +359,24 @@ def hearings_list():
     if committee:
         where_clauses.append("""
             EXISTS (SELECT 1 FROM hearing_committees hc
-            JOIN committees c ON hc.committee_id = c.id
-            WHERE hc.hearing_id = h.id AND c.id = ?)
+            WHERE hc.hearing_id = h.id AND hc.committee_id = ?)
         """)
         params.append(int(committee))
 
-    where = " AND ".join(where_clauses)
+    if date_from:
+        where_clauses.append("h.date >= ?")
+        params.append(date_from)
 
+    if date_to:
+        where_clauses.append("h.date <= ?")
+        params.append(date_to)
+
+    where = " AND ".join(where_clauses)
     count = db.execute(f"SELECT COUNT(*) FROM hearings h WHERE {where}", params).fetchone()[0]
 
     hearings = db.execute(f"""
         SELECT h.*,
-            GROUP_CONCAT( c.name) as committee_names,
+            GROUP_CONCAT(c.name) as committee_names,
             (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
         FROM hearings h
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
@@ -261,14 +387,15 @@ def hearings_list():
         LIMIT ? OFFSET ?
     """, params + [PER_PAGE, offset]).fetchall()
 
-    total_pages = math.ceil(count / PER_PAGE)
+    total_pages = math.ceil(count / PER_PAGE) if count else 0
 
     congresses = db.execute(
         "SELECT DISTINCT congress FROM hearings ORDER BY congress DESC"
     ).fetchall()
 
+    # Only show committees with names
     committees = db.execute(
-        "SELECT id, name FROM committees ORDER BY name"
+        "SELECT id, name FROM committees WHERE name != '' AND name IS NOT NULL ORDER BY name"
     ).fetchall()
 
     return render_template("hearings.html",
@@ -281,7 +408,9 @@ def hearings_list():
                            congress=congress,
                            committee=committee,
                            congresses=congresses,
-                           committees=committees)
+                           committees=committees,
+                           date_from=date_from,
+                           date_to=date_to)
 
 
 @app.route("/hearing/<int:hearing_id>")
@@ -290,7 +419,7 @@ def hearing_detail(hearing_id):
 
     hearing = db.execute("""
         SELECT h.*,
-            GROUP_CONCAT( c.name) as committee_names
+            GROUP_CONCAT(c.name) as committee_names
         FROM hearings h
         LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
         LEFT JOIN committees c ON hc.committee_id = c.id
@@ -332,13 +461,13 @@ def testimony_detail(hearing_id, appearance_id):
     if not appearance:
         return "Testimony not found", 404
 
-    testimony = db.execute("""
-        SELECT * FROM testimony WHERE appearance_id = ?
-    """, (appearance_id,)).fetchall()
+    testimony = db.execute(
+        "SELECT * FROM testimony WHERE appearance_id = ?", (appearance_id,)
+    ).fetchall()
 
-    qfrs = db.execute("""
-        SELECT * FROM questions_for_record WHERE appearance_id = ?
-    """, (appearance_id,)).fetchall()
+    qfrs = db.execute(
+        "SELECT * FROM questions_for_record WHERE appearance_id = ?", (appearance_id,)
+    ).fetchall()
 
     return render_template("testimony_detail.html",
                            appearance=appearance,
@@ -348,35 +477,38 @@ def testimony_detail(hearing_id, appearance_id):
 
 @app.route("/titles")
 def titles_list():
-    """Browse witnesses by their official titles."""
     db = get_connection()
     q = request.args.get("q", "").strip()
     page = request.args.get("page", 1, type=int)
     offset = (page - 1) * PER_PAGE
 
     if q:
+        like_q = f"%{q}%"
         titles = db.execute("""
             SELECT wt.title, wt.organization,
                 COUNT(DISTINCT wt.witness_id) as holder_count,
-                GROUP_CONCAT( w.name) as holders
+                GROUP_CONCAT(w.name) as holders
             FROM witness_titles wt
             JOIN witnesses w ON wt.witness_id = w.id
             WHERE wt.title LIKE ? OR wt.organization LIKE ?
             GROUP BY wt.title, wt.organization
             ORDER BY holder_count DESC
             LIMIT ? OFFSET ?
-        """, (f"%{q}%", f"%{q}%", PER_PAGE, offset)).fetchall()
+        """, (like_q, like_q, PER_PAGE, offset)).fetchall()
 
         count = db.execute("""
-            SELECT COUNT(DISTINCT wt.title || wt.organization)
-            FROM witness_titles wt
-            WHERE wt.title LIKE ? OR wt.organization LIKE ?
-        """, (f"%{q}%", f"%{q}%")).fetchone()[0]
+            SELECT COUNT(*) FROM (
+                SELECT wt.title, wt.organization
+                FROM witness_titles wt
+                WHERE wt.title LIKE ? OR wt.organization LIKE ?
+                GROUP BY wt.title, wt.organization
+            )
+        """, (like_q, like_q)).fetchone()[0]
     else:
         titles = db.execute("""
             SELECT wt.title, wt.organization,
                 COUNT(DISTINCT wt.witness_id) as holder_count,
-                GROUP_CONCAT( w.name) as holders
+                GROUP_CONCAT(w.name) as holders
             FROM witness_titles wt
             JOIN witnesses w ON wt.witness_id = w.id
             GROUP BY wt.title, wt.organization
@@ -385,8 +517,11 @@ def titles_list():
         """, (PER_PAGE, offset)).fetchall()
 
         count = db.execute("""
-            SELECT COUNT(DISTINCT wt.title || COALESCE(wt.organization, ''))
-            FROM witness_titles wt
+            SELECT COUNT(*) FROM (
+                SELECT wt.title, wt.organization
+                FROM witness_titles wt
+                GROUP BY wt.title, wt.organization
+            )
         """).fetchone()[0]
 
     total_pages = math.ceil(count / PER_PAGE) if count else 0
@@ -401,7 +536,6 @@ def titles_list():
 
 @app.route("/title/<path:title>")
 def title_detail(title):
-    """Show all people who have held a specific title."""
     db = get_connection()
     org = request.args.get("org", "")
 
@@ -431,7 +565,6 @@ def title_detail(title):
 @app.route("/committees")
 def committees_list():
     db = get_connection()
-
     committees = db.execute("""
         SELECT c.*,
             COUNT(DISTINCT hc.hearing_id) as hearing_count,
@@ -439,7 +572,9 @@ def committees_list():
         FROM committees c
         LEFT JOIN hearing_committees hc ON c.id = hc.committee_id
         LEFT JOIN witness_appearances wa ON wa.hearing_id = hc.hearing_id
+        WHERE c.name != '' AND c.name IS NOT NULL
         GROUP BY c.id
+        HAVING hearing_count > 0
         ORDER BY hearing_count DESC
     """).fetchall()
 
@@ -450,43 +585,114 @@ def committees_list():
 def search():
     q = request.args.get("q", "").strip()
     if not q:
-        return render_template("search.html", q="", results=None)
+        return render_template("search.html", q="",
+                               witness_results=[], hearing_results=[], title_results=[])
 
     db = get_connection()
+    fts_q = fts_query(q)
+    like_q = f"%{q}%"
 
-    # Search witnesses
-    witness_results = db.execute("""
-        SELECT w.*, 'witness' as result_type
-        FROM witnesses w
-        JOIN witnesses_fts ON witnesses_fts.rowid = w.id
-        WHERE witnesses_fts MATCH ?
-        ORDER BY rank
-        LIMIT 20
-    """, (q,)).fetchall()
+    # Search witnesses by name (FTS + LIKE fallback)
+    try:
+        witness_results = db.execute("""
+            SELECT w.*, 'witness' as result_type,
+                (SELECT GROUP_CONCAT(wt.title, '; ')
+                 FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+            FROM witnesses w
+            JOIN witnesses_fts ON witnesses_fts.rowid = w.id
+            WHERE witnesses_fts MATCH ?
+            ORDER BY w.appearance_count DESC
+            LIMIT 25
+        """, (fts_q,)).fetchall()
+    except Exception:
+        witness_results = db.execute("""
+            SELECT w.*, 'witness' as result_type,
+                (SELECT GROUP_CONCAT(wt.title, '; ')
+                 FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+            FROM witnesses w
+            WHERE w.name LIKE ?
+            ORDER BY w.appearance_count DESC
+            LIMIT 25
+        """, (like_q,)).fetchall()
 
     # Search hearings
-    hearing_results = db.execute("""
-        SELECT h.*, 'hearing' as result_type,
-            GROUP_CONCAT( c.name) as committee_names
-        FROM hearings h
-        JOIN hearings_fts ON hearings_fts.rowid = h.id
-        LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
-        LEFT JOIN committees c ON hc.committee_id = c.id
-        WHERE hearings_fts MATCH ?
-        GROUP BY h.id
-        ORDER BY rank
-        LIMIT 20
-    """, (q,)).fetchall()
+    try:
+        hearing_results = db.execute("""
+            SELECT h.*, 'hearing' as result_type,
+                GROUP_CONCAT(c.name) as committee_names,
+                (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
+            FROM hearings h
+            JOIN hearings_fts ON hearings_fts.rowid = h.id
+            LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
+            LEFT JOIN committees c ON hc.committee_id = c.id
+            WHERE hearings_fts MATCH ?
+            GROUP BY h.id
+            ORDER BY h.date DESC
+            LIMIT 25
+        """, (fts_q,)).fetchall()
+    except Exception:
+        hearing_results = db.execute("""
+            SELECT h.*, 'hearing' as result_type,
+                GROUP_CONCAT(c.name) as committee_names,
+                (SELECT COUNT(*) FROM witness_appearances wa WHERE wa.hearing_id = h.id) as witness_count
+            FROM hearings h
+            LEFT JOIN hearing_committees hc ON h.id = hc.hearing_id
+            LEFT JOIN committees c ON hc.committee_id = c.id
+            WHERE h.title LIKE ?
+            GROUP BY h.id
+            ORDER BY h.date DESC
+            LIMIT 25
+        """, (like_q,)).fetchall()
 
-    # Search titles
-    title_results = db.execute("""
-        SELECT wt.title, wt.organization, w.name, w.id as witness_id,
-            'title' as result_type
-        FROM witness_titles wt
-        JOIN witnesses w ON wt.witness_id = w.id
-        WHERE wt.title LIKE ? OR wt.organization LIKE ?
-        LIMIT 20
-    """, (f"%{q}%", f"%{q}%")).fetchall()
+    # Search titles and organizations
+    # Match each word against the combined title+org, requiring ALL words to match
+    # For short all-caps words (likely abbreviations), also try matching against org name
+    words = [w for w in q.split() if len(w) > 1]
+    combined_field = "(wt.title || ' ' || COALESCE(wt.organization, ''))"
+    if words:
+        word_clauses = []
+        word_params = []
+        for word in words:
+            word_clauses.append(f"{combined_field} LIKE ?")
+            word_params.append(f"%{word}%")
+
+        # Try with ALL words matching
+        title_results = db.execute(f"""
+            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                w.appearance_count, 'title' as result_type
+            FROM witness_titles wt
+            JOIN witnesses w ON wt.witness_id = w.id
+            WHERE {' AND '.join(word_clauses)}
+            ORDER BY w.appearance_count DESC
+            LIMIT 25
+        """, word_params).fetchall()
+
+        # If no results, try with ANY word matching
+        if not title_results:
+            any_clauses = []
+            any_params = []
+            for word in words:
+                any_clauses.append(f"{combined_field} LIKE ?")
+                any_params.append(f"%{word}%")
+            title_results = db.execute(f"""
+                SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                    w.appearance_count, 'title' as result_type
+                FROM witness_titles wt
+                JOIN witnesses w ON wt.witness_id = w.id
+                WHERE {' OR '.join(any_clauses)}
+                ORDER BY w.appearance_count DESC
+                LIMIT 25
+            """, any_params).fetchall()
+    else:
+        title_results = db.execute("""
+            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                w.appearance_count, 'title' as result_type
+            FROM witness_titles wt
+            JOIN witnesses w ON wt.witness_id = w.id
+            WHERE wt.title LIKE ? OR wt.organization LIKE ?
+            ORDER BY w.appearance_count DESC
+            LIMIT 25
+        """, (like_q, like_q)).fetchall()
 
     return render_template("search.html",
                            q=q,
@@ -497,26 +703,36 @@ def search():
 
 @app.route("/api/witnesses")
 def api_witnesses():
-    """JSON API for witness data."""
     db = get_connection()
     q = request.args.get("q", "")
     limit = min(request.args.get("limit", 100, type=int), 500)
 
     if q:
-        witnesses = db.execute("""
-            SELECT w.id, w.name, w.normalized_name, w.appearance_count,
-                w.first_appearance_date, w.last_appearance_date
-            FROM witnesses w
-            JOIN witnesses_fts ON witnesses_fts.rowid = w.id
-            WHERE witnesses_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-        """, (q, limit)).fetchall()
+        fts_q = fts_query(q)
+        try:
+            witnesses = db.execute("""
+                SELECT w.id, w.name, w.normalized_name, w.appearance_count,
+                    w.first_appearance_date, w.last_appearance_date
+                FROM witnesses w
+                JOIN witnesses_fts ON witnesses_fts.rowid = w.id
+                WHERE witnesses_fts MATCH ?
+                ORDER BY w.appearance_count DESC
+                LIMIT ?
+            """, (fts_q, limit)).fetchall()
+        except Exception:
+            witnesses = db.execute("""
+                SELECT id, name, normalized_name, appearance_count,
+                    first_appearance_date, last_appearance_date
+                FROM witnesses WHERE name LIKE ?
+                ORDER BY appearance_count DESC
+                LIMIT ?
+            """, (f"%{q}%", limit)).fetchall()
     else:
         witnesses = db.execute("""
             SELECT id, name, normalized_name, appearance_count,
                 first_appearance_date, last_appearance_date
             FROM witnesses
+            WHERE appearance_count > 0
             ORDER BY appearance_count DESC
             LIMIT ?
         """, (limit,)).fetchall()
@@ -526,15 +742,17 @@ def api_witnesses():
 
 @app.route("/api/stats")
 def api_stats():
-    """JSON API for database statistics."""
     db = get_connection()
     stats = {
-        "witnesses": db.execute("SELECT COUNT(*) FROM witnesses").fetchone()[0],
+        "witnesses": db.execute("SELECT COUNT(*) FROM witnesses WHERE appearance_count > 0").fetchone()[0],
         "hearings": db.execute("SELECT COUNT(*) FROM hearings").fetchone()[0],
         "appearances": db.execute("SELECT COUNT(*) FROM witness_appearances").fetchone()[0],
         "testimony": db.execute("SELECT COUNT(*) FROM testimony").fetchone()[0],
         "qfr": db.execute("SELECT COUNT(*) FROM questions_for_record").fetchone()[0],
-        "committees": db.execute("SELECT COUNT(*) FROM committees").fetchone()[0],
+        "committees": db.execute("SELECT COUNT(*) FROM committees WHERE name != ''").fetchone()[0],
+        "congresses_covered": [r[0] for r in db.execute(
+            "SELECT DISTINCT congress FROM hearings ORDER BY congress DESC"
+        ).fetchall()],
     }
     return jsonify(stats)
 
