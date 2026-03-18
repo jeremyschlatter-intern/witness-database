@@ -104,13 +104,23 @@ def display_name(name):
     """Clean up a witness name for display - strip honorific and military prefixes."""
     if not name:
         return name
-    name = re.sub(
-        r'^(The Honorable|Hon\.|Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Prof\.|'
-        r'Rear Admiral|Vice Admiral|Admiral|General|Colonel|Major General|'
-        r'Brigadier General|Lieutenant General|Lieutenant Colonel|'
-        r'Major|Captain|Lieutenant|Sergeant|Ambassador|Commissioner)\s+',
-        '', name, flags=re.IGNORECASE
-    )
+    # Apply repeatedly to strip compound prefixes like "Rear Admiral Upper Half"
+    changed = True
+    while changed:
+        new_name = re.sub(
+            r'^(The Honorable|Hon\.|Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Prof\.|'
+            r'Rear Admiral Upper Half|Rear Admiral Lower Half|'
+            r'Rear Admiral|Vice Admiral|Admiral|'
+            r'Lieutenant General|Major General|Brigadier General|General|'
+            r'Lieutenant Colonel|Colonel|'
+            r'Chief Master Sergeant|Master Chief Petty Officer|Command Sergeant Major|'
+            r'Sergeant Major|Master Sergeant|Sergeant|'
+            r'Major|Captain|Lieutenant|'
+            r'Ambassador|Commissioner)\s+',
+            '', name, flags=re.IGNORECASE
+        )
+        changed = new_name != name
+        name = new_name
     return name
 
 
@@ -216,8 +226,9 @@ def index():
     # Top NON-member witnesses (exclude Members of Congress)
     top_witnesses = db.execute("""
         SELECT w.*,
-            (SELECT GROUP_CONCAT(wt.title, '; ')
-             FROM witness_titles wt WHERE wt.witness_id = w.id) as titles
+            (SELECT GROUP_CONCAT(wt.title || CASE WHEN wt.organization IS NOT NULL AND wt.organization != ''
+                THEN ', ' || wt.organization ELSE '' END, '; ')
+             FROM (SELECT DISTINCT title, organization FROM witness_titles WHERE witness_id = w.id LIMIT 2) wt) as titles
         FROM witnesses w
         WHERE w.appearance_count > 0
         AND NOT EXISTS (
@@ -676,6 +687,50 @@ def title_detail(title):
                            holders=holders)
 
 
+@app.route("/organization/<path:org_name>")
+def organization_detail(org_name):
+    """View all witnesses from a given organization."""
+    db = get_connection()
+
+    # Get witnesses from this org via appearances
+    witnesses = db.execute("""
+        SELECT w.id, w.name, w.appearance_count,
+            wa.position, wa.organization,
+            COUNT(DISTINCT wa.hearing_id) as org_appearances,
+            MIN(h.date) as first_date, MAX(h.date) as last_date
+        FROM witness_appearances wa
+        JOIN witnesses w ON wa.witness_id = w.id
+        JOIN hearings h ON wa.hearing_id = h.id
+        WHERE wa.organization = ?
+        GROUP BY w.id
+        ORDER BY org_appearances DESC
+    """, (org_name,)).fetchall()
+
+    # Get hearings involving this org's witnesses
+    hearings = db.execute("""
+        SELECT DISTINCT h.id, h.title, h.date, h.congress, h.chamber,
+            GROUP_CONCAT(DISTINCT w.name) as witness_names,
+            COUNT(DISTINCT wa.witness_id) as witness_count
+        FROM hearings h
+        JOIN witness_appearances wa ON wa.hearing_id = h.id
+        JOIN witnesses w ON wa.witness_id = w.id
+        WHERE wa.organization = ?
+        GROUP BY h.id
+        ORDER BY h.date DESC
+        LIMIT 50
+    """, (org_name,)).fetchall()
+
+    total_witnesses = len(witnesses)
+    total_hearings = len(hearings)
+
+    return render_template("organization_detail.html",
+                           org_name=org_name,
+                           witnesses=witnesses,
+                           hearings=hearings,
+                           total_witnesses=total_witnesses,
+                           total_hearings=total_hearings)
+
+
 @app.route("/committees")
 def committees_list():
     db = get_connection()
@@ -870,19 +925,23 @@ def search():
                     LIMIT 25
                 """, word_params).fetchall()
 
-                # Fall back to OR if AND yields nothing
-                if not title_results:
-                    or_clauses = [f"{combined_field} LIKE ?" for word in words]
-                    or_params = [f"%{word}%" for word in words]
-                    title_results = db.execute(f"""
-                        SELECT wt.title, wt.organization, w.name, w.id as witness_id,
-                            w.appearance_count, 'title' as result_type
-                        FROM witness_titles wt
-                        JOIN witnesses w ON wt.witness_id = w.id
-                        WHERE {' OR '.join(or_clauses)}
-                        ORDER BY w.appearance_count DESC
-                        LIMIT 25
-                    """, or_params).fetchall()
+                # Fall back to OR only if no witness name matches found
+                # (avoids false positives like "Pete" matching "Competere")
+                if not title_results and not witness_results:
+                    # Only use words with 5+ chars to reduce false positives
+                    long_words = [w for w in words if len(w) >= 5]
+                    if long_words:
+                        or_clauses = [f"{combined_field} LIKE ?" for word in long_words]
+                        or_params = [f"%{word}%" for word in long_words]
+                        title_results = db.execute(f"""
+                            SELECT wt.title, wt.organization, w.name, w.id as witness_id,
+                                w.appearance_count, 'title' as result_type
+                            FROM witness_titles wt
+                            JOIN witnesses w ON wt.witness_id = w.id
+                            WHERE {' OR '.join(or_clauses)}
+                            ORDER BY w.appearance_count DESC
+                            LIMIT 25
+                        """, or_params).fetchall()
             else:
                 sq_like = f"%{sq}%"
                 title_results = db.execute("""

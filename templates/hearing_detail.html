@@ -42,7 +42,7 @@
         <a href="https://www.govinfo.gov/content/pkg/{{ hearing.govinfo_package_id }}/html/{{ hearing.govinfo_package_id }}.htm" target="_blank">GovInfo Full Text</a>
         {% endif %}
         {% if hearing.event_id %}
-        <a href="https://www.congress.gov/event/{{ hearing.congress }}th-congress/{{ hearing.chamber|lower }}-event/{{ hearing.event_id }}" target="_blank">Congress.gov</a>
+        <a href="https://www.congress.gov/event/{{ hearing.congress|congress_ordinal }}-congress/{{ hearing.chamber|lower }}-event/{{ hearing.event_id }}" target="_blank">Congress.gov</a>
         {% endif %}
     </div>
 </div>

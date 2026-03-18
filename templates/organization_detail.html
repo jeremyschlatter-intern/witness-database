@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ org_name }} - Congressional Witness Database{% endblock %}
+{% block content %}
+<div class="detail-header">
+    <h1>{{ org_name }}</h1>
+    <div class="detail-meta">
+        <div class="meta-item">
+            <span class="meta-label">Witnesses:</span>
+            <span class="badge badge-count">{{ total_witnesses }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Hearings:</span>
+            <span class="badge badge-count">{{ total_hearings }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div>
+        <h2 class="section-title">Witnesses from {{ org_name }}</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Position</th>
+                    <th class="count-col">Appearances</th>
+                    <th class="date-col">First</th>
+                    <th class="date-col">Last</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for w in witnesses %}
+                <tr>
+                    <td class="name-col"><a href="/witness/{{ w.id }}">{{ w.name|clean_name }}</a></td>
+                    <td style="font-size:0.85rem; color:var(--text-light)">{{ (w.position or '')|truncate(40) }}</td>
+                    <td class="count-col"><span class="badge badge-count">{{ w.org_appearances }}</span></td>
+                    <td class="date-col">{{ w.first_date or '' }}</td>
+                    <td class="date-col">{{ w.last_date or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div>
+        <h2 class="section-title">Recent Hearings</h2>
+        {% for h in hearings %}
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><a href="/hearing/{{ h.id }}">{{ h.title|truncate(80) }}</a></span>
+                <span class="badge {% if h.chamber == 'Senate' %}badge-senate{% else %}badge-house{% endif %}">{{ h.chamber }}</span>
+            </div>
+            <div style="font-size:0.85rem; color:var(--text-muted)">
+                {% if h.date %}{{ h.date }}{% endif %}
+                &middot; {{ h.witness_count }} witness{{ 'es' if h.witness_count != 1 }} from {{ org_name }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

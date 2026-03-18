@@ -49,7 +49,7 @@
                 {% for org in top_orgs %}
                 <tr>
                     <td style="color:var(--text-muted); font-size:0.8rem">{{ loop.index }}</td>
-                    <td><a href="/search?q={{ org.organization|urlencode }}">{{ org.organization|truncate(60) }}</a></td>
+                    <td><a href="/organization/{{ org.organization|urlencode }}">{{ org.organization|truncate(60) }}</a></td>
                     <td class="count-col">{{ org.witness_count }}</td>
                     <td class="count-col">{{ org.hearing_count }}</td>
                 </tr>
@@ -74,7 +74,7 @@
                 <tr>
                     <td style="color:var(--text-muted); font-size:0.8rem">{{ loop.index }}</td>
                     <td>
-                        <a href="/committee/{{ c.id }}">{{ c.name|truncate(45) }}</a>
+                        <a href="/committee/{{ c.id }}">{{ c.name|truncate(65) }}</a>
                         <span class="badge {% if c.chamber == 'Senate' %}badge-senate{% elif c.chamber == 'House' %}badge-house{% endif %}" style="font-size:0.7rem; margin-left:0.25rem">{{ c.chamber }}</span>
                     </td>
                     <td class="count-col">{{ c.hearing_count }}</td>

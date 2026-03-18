@@ -22,7 +22,7 @@
     <select name="committee">
         <option value="">All Committees</option>
         {% for c in committees %}
-        <option value="{{ c.id }}" {% if committee|string == c.id|string %}selected{% endif %}>{{ c.name|truncate(50) }}</option>
+        <option value="{{ c.id }}" {% if committee|string == c.id|string %}selected{% endif %}>{{ c.name|truncate(70) }}</option>
         {% endfor %}
     </select>
     <button type="submit" class="btn btn-primary">Filter</button>

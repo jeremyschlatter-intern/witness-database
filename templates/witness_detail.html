@@ -68,8 +68,7 @@
     {% if a.position or a.organization %}
     <div style="font-size:0.9rem">
         <em>Testified as:</em>
-        {% if a.position %}{{ a.position }}{% endif %}
-        {% if a.organization %}, {{ a.organization }}{% endif %}
+        {% if a.position %}{{ a.position|clean_text }}{% endif %}{% if a.organization %}, {{ a.organization }}{% endif %}
     </div>
     {% endif %}
     <div class="external-links">
